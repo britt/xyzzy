@@ -30,15 +30,16 @@
     "dist"
   ],
   "scripts": {
-    "build": "tsup",
-    "dev": "tsup --watch",
+    "start": "bun run src/cli/index.ts",
+    "dev": "bun --watch run src/cli/index.ts",
+    "build": "bun build ./src/index.ts ./src/cli/index.ts --root ./src --outdir ./dist --target node --packages external --splitting --sourcemap=linked && tsc -p tsconfig.build.json",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
     "lint": "eslint .",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "prepublishOnly": "npm run build"
+    "prepublishOnly": "bun run build"
   },
   "dependencies": {
     "@ai-sdk/openai-compatible": "^0.2.16",
@@ -59,7 +60,6 @@
     "eslint": "^9.39.5",
     "ink-testing-library": "^4.0.0",
     "prettier": "^3.9.5",
-    "tsup": "^8.5.1",
     "typescript": "^5.9.3",
     "typescript-eslint": "^8.64.0",
     "vitest": "^2.1.9"
