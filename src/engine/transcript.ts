@@ -1,24 +1,22 @@
 import type { Message } from "../world/schema.js";
-import { notImplemented } from "../util/notImplemented.js";
 
 /** Append a message, returning a new transcript array. */
 export function appendMessage(
-  _transcript: Message[],
-  _message: Message,
+  transcript: Message[],
+  message: Message,
 ): Message[] {
-  return notImplemented("engine/transcript.appendMessage");
+  return [...transcript, message];
 }
 
 /**
- * Return the most recent slice of the transcript that fits the model context
- * budget. Game facts live in the digest, so trimming here is lossless for
- * state.
- *
- * TODO: window by message count / token estimate.
+ * Return the most recent `maxMessages` entries of the transcript. Game facts
+ * live in the state digest, so trimming here is lossless for state — it only
+ * bounds the conversational context sent to the model.
  */
 export function windowTranscript(
-  _transcript: Message[],
-  _maxMessages: number,
+  transcript: Message[],
+  maxMessages: number,
 ): Message[] {
-  return notImplemented("engine/transcript.windowTranscript");
+  if (maxMessages <= 0) return [];
+  return transcript.slice(-maxMessages);
 }
