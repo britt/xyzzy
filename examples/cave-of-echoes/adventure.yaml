@@ -1,0 +1,125 @@
+# Cave of Echoes — an example xyzzy adventure.
+#
+# A small, fully-mapped world that exercises every optional section of the
+# schema (rooms, items, characters, beats) so it doubles as a reference and a
+# demo. A valid adventure needs only `meta`, `premise`, and `start`; everything
+# below that is optional structure the model will honor when present.
+
+meta:
+  id: cave-of-echoes
+  title: The Cave of Echoes
+  author: xyzzy examples
+  version: "1.0.0"
+
+premise: >
+  A cold draft breathes out of the hillside crack you have been searching for
+  all week. Local stories say a colossal cavern lies beyond it, and that
+  something old and patient guards a single perfect gemstone in its depths.
+  You have a coil of rope, your wits, and — if you can find it — an old brass
+  lantern left by the last person foolish enough to come this way. The tone is
+  wry, unhurried, and a little eerie; the dark is never quite silent.
+
+entities:
+  rooms:
+    - id: entrance
+      name: Cave Mouth
+      description: >
+        A jagged crack in the hillside, just wide enough to squeeze through.
+        Daylight gives out a few steps in, where the floor drops away into
+        blackness. Cold air pours up from below, carrying a faint mineral smell.
+      exits:
+        down: cavern
+
+    - id: cavern
+      name: The Great Cavern
+      description: >
+        An immense vaulted space. Your footsteps scatter into echoes that take
+        too long to return. Passages lead off in three directions, and a rope
+        lies coiled where someone dropped it long ago.
+      exits:
+        up: entrance
+        north: lake
+        east: alcove
+
+    - id: lake
+      name: The Still Lake
+      description: >
+        A black underground lake stretches beyond the reach of any light. The
+        water is glass-flat and utterly silent. A hunched shape sits on the far
+        shore, unmoving, watching.
+      exits:
+        south: cavern
+
+    - id: alcove
+      name: The Treasure Alcove
+      description: >
+        A narrow side-chamber where the walls glitter with quartz. On a natural
+        stone pedestal at the center rests a single gemstone, catching and
+        throwing back the smallest amount of light.
+      exits:
+        west: cavern
+
+  items:
+    - id: lantern
+      name: brass lantern
+      description: >
+        A dented brass lantern, cold to the touch. It still holds oil, and it
+        will light if you can find a way to spark it.
+      location: entrance
+
+    - id: rope
+      name: coil of rope
+      description: A sturdy coil of hemp rope, frayed but serviceable.
+      location: cavern
+
+    - id: gemstone
+      name: perfect gemstone
+      description: >
+        A flawless gem the size of a plum. It seems to hold light longer than it
+        should, glowing faintly even after you look away.
+      location: alcove
+
+    - id: copper-coin
+      name: tarnished copper coin
+      description: An old copper coin, worn smooth. Grimble covets shiny things.
+      location: grimble
+
+  characters:
+    - id: grimble
+      name: Grimble
+      persona: >
+        An ancient, lonely cave troll who guards the lake more out of habit than
+        malice. He is slow, suspicious of strangers, and desperately fond of
+        shiny objects. He will not let anyone pass to the far shore unless they
+        earn his trust — a gift, a kind word, or a good riddle answered. He
+        speaks in short, rumbling sentences and remembers every slight.
+      location: lake
+      history:
+        - Has guarded the still lake for longer than he can count.
+        - Was tricked once, ages ago, and has trusted no one since.
+      state:
+        trust: 10
+        mood: wary
+        bribed: false
+
+start:
+  room: entrance
+  inventory: []
+  flags:
+    lanternLit: false
+  state:
+    turnsInDark: 0
+    treasureClaimed: false
+
+beats:
+  - id: find-light
+    description: The player lights the brass lantern and can see in the dark.
+    trigger: Player finds a way to spark the lantern; set flags.lanternLit true.
+  - id: win-over-grimble
+    description: The player earns Grimble's trust enough to pass the lake.
+    trigger: >
+      Grimble's trust rises (a gift such as the coin or gemstone, a riddle, or
+      kindness). Raise character state trust and flip bribed/mood as fitting.
+  - id: claim-the-gem
+    description: The player takes the perfect gemstone from the alcove.
+    trigger: Player picks up the gemstone; set state.treasureClaimed true.
