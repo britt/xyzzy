@@ -106,16 +106,28 @@ non-zero on failure, so it works in CI.
 ### Configure providers
 
 ```bash
-xyzzy config list          # show configured providers
-xyzzy config add           # add a provider (base URL, model, kind)
+xyzzy config list          # show configured providers (the default is marked *)
 xyzzy config use <name>    # set the default provider
-xyzzy config test          # ping the configured endpoint
+xyzzy config test [name]   # ping a provider's endpoint (defaults to the default)
+
+# add (or replace) a named provider:
+xyzzy config add <name> --model <model> [--kind <kind>] \
+  [--base-url <url>] [--api-key-env <VAR>]
+```
+
+`--kind` defaults to `openai-compatible`; `--base-url` defaults to the local
+Ollama endpoint (`http://localhost:11434/v1`). The first provider you add
+becomes the default. For example:
+
+```bash
+xyzzy config add local  --model llama3.1 --base-url http://localhost:11434/v1
+xyzzy config add cloud  --kind openai --model gpt-4o --api-key-env OPENAI_API_KEY
 ```
 
 Global provider settings live in `~/.config/xyzzy/config.json`. An adventure can
 override the model/provider with its own `xyzzy.config.json`. API keys for cloud
-providers are read from the environment and never written to disk. Resolution
-order: `--provider` flag → adventure config → global default.
+providers are read from the environment (via `--api-key-env`) and never written
+to disk. Resolution order: `--provider` flag → adventure config → global default.
 
 ## Documentation
 

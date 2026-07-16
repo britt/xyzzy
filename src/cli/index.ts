@@ -50,12 +50,37 @@ export function buildProgram(): Command {
     .command("config")
     .description("manage LLM providers");
   config.command("list").action(configList);
-  config.command("add").action(configAdd);
+  config
+    .command("add")
+    .argument("<name>", "provider name")
+    .requiredOption("--model <model>", "model id")
+    .option(
+      "--kind <kind>",
+      "provider kind (openai-compatible|ollama|openai|anthropic)",
+      "openai-compatible",
+    )
+    .option("--base-url <url>", "endpoint base URL")
+    .option("--api-key-env <var>", "env var holding the API key")
+    .action(
+      (
+        name: string,
+        opts: { model: string; kind: string; baseUrl?: string; apiKeyEnv?: string },
+      ) =>
+        configAdd(name, {
+          model: opts.model,
+          kind: opts.kind,
+          baseUrl: opts.baseUrl,
+          apiKeyEnv: opts.apiKeyEnv,
+        }),
+    );
   config
     .command("use")
     .argument("<name>", "provider name")
     .action((name: string) => configUse(name));
-  config.command("test").action(configTest);
+  config
+    .command("test")
+    .argument("[name]", "provider to ping (defaults to the configured default)")
+    .action((name?: string) => configTest(name));
 
   return program;
 }
