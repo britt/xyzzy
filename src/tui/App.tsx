@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { Box, Static, Text, useApp } from "ink";
+import { useRef, useState } from "react";
+import { Box, Static, Text, useApp, useInput } from "ink";
 import TextInput from "ink-text-input";
 import Spinner from "ink-spinner";
 import type { Adventure, GameState } from "../world/schema.js";
@@ -107,6 +107,32 @@ export function App({
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Bash-style input history. `historyIndex` is null while editing a fresh line
+  // and an index into `history` while recalling; `draft` preserves the unsent
+  // line so Down can return to it. `inputKey` remounts TextInput on recall so
+  // the cursor lands at the end of the recalled text.
+  const [history, setHistory] = useState<string[]>([]);
+  const [historyIndex, setHistoryIndex] = useState<number | null>(null);
+  const [draft, setDraft] = useState("");
+  const [inputKey, setInputKey] = useState(0);
+
+  // Refs mirror the values the key handler reads, so it never sees a stale
+  // closure regardless of when Ink re-subscribes it.
+  const historyRef = useRef(history);
+  historyRef.current = history;
+  const historyIndexRef = useRef(historyIndex);
+  historyIndexRef.current = historyIndex;
+  const draftRef = useRef(draft);
+  draftRef.current = draft;
+  const inputRef = useRef(input);
+  inputRef.current = input;
+
+  function recall(value: string, index: number | null) {
+    setHistoryIndex(index);
+    setInput(value);
+    setInputKey((k) => k + 1);
+  }
 
   function push(role: Line["role"], text: string) {
     setLines((prev) => [...prev, { key: prev.length, role, text }]);
@@ -238,6 +264,12 @@ export function App({
     if (value === "" || busy) return;
     setError(null);
 
+    // Record in history (skip consecutive duplicates, like bash) and reset the
+    // recall cursor back to a fresh line.
+    setHistory((h) => (h[h.length - 1] === value ? h : [...h, value]));
+    setHistoryIndex(null);
+    setDraft("");
+
     if (value.startsWith("/")) {
       const [command, ...rest] = value.split(/\s+/);
       try {
@@ -272,6 +304,32 @@ export function App({
       setBusy(false);
     }
   }
+
+  // Up/Down arrows walk the command history (bash-style). Only active while the
+  // input line is shown (not mid-turn). TextInput ignores these keys itself.
+  useInput(
+    (_input, key) => {
+      const hist = historyRef.current;
+      const idx = historyIndexRef.current;
+      if (hist.length === 0) return;
+      if (key.upArrow) {
+        if (idx === null) {
+          setDraft(inputRef.current);
+          recall(hist[hist.length - 1]!, hist.length - 1);
+        } else if (idx > 0) {
+          recall(hist[idx - 1]!, idx - 1);
+        }
+      } else if (key.downArrow) {
+        if (idx === null) return;
+        if (idx < hist.length - 1) {
+          recall(hist[idx + 1]!, idx + 1);
+        } else {
+          recall(draftRef.current, null); // past newest → restore the draft
+        }
+      }
+    },
+    { isActive: !busy },
+  );
 
   return (
     <Box flexDirection="column">
@@ -317,7 +375,12 @@ export function App({
       ) : (
         <Box>
           <Text>{"> "}</Text>
-          <TextInput value={input} onChange={setInput} onSubmit={submit} />
+          <TextInput
+            key={inputKey}
+            value={input}
+            onChange={setInput}
+            onSubmit={submit}
+          />
         </Box>
       )}
     </Box>
