@@ -5,7 +5,8 @@ import { loadAdventure, resolveAdventureFile } from "../../world/loader.js";
 import { newGameState } from "../../engine/state.js";
 import { loadGame, saveExists } from "../../engine/save.js";
 import { resolveProvider } from "../../config/resolve.js";
-import { createModel } from "../../llm/registry.js";
+import { readGlobalConfig } from "../../config/store.js";
+import { createModel, listModels } from "../../llm/registry.js";
 import { dirname } from "node:path";
 
 export interface PlayOptions {
@@ -27,7 +28,7 @@ export async function play(path: string, opts: PlayOptions): Promise<void> {
     providerFlag: opts.provider,
     adventureDir,
   });
-  const model = createModel(provider);
+  const providers = (await readGlobalConfig()).providers;
 
   const slot = opts.save ?? DEFAULT_SLOT;
   const state =
@@ -39,10 +40,20 @@ export async function play(path: string, opts: PlayOptions): Promise<void> {
     createElement(App, {
       adventure,
       initialState: state,
-      model,
+      provider,
+      // Built lazily inside the TUI so an unbuildable/unreachable LLM never
+      // blocks startup — slash commands (incl. /model, /quit) always work.
+      makeModel: createModel,
+      listModels,
+      providers,
       adventureDir,
       saveSlot: slot,
     }),
   );
   await waitUntilExit();
+
+  // The TUI has unmounted (e.g. via /quit). Exit promptly rather than waiting
+  // for lingering handles — an HTTP keep-alive socket from a model call can
+  // otherwise keep the event loop alive for seconds after the player quits.
+  process.exit(0);
 }

@@ -31,7 +31,7 @@
   ],
   "scripts": {
     "start": "bun run src/cli/index.ts",
-    "dev": "bun --watch run src/cli/index.ts",
+    "dev": "bun run src/cli/index.ts play examples/cave-of-echoes",
     "build": "bun build ./src/index.ts ./src/cli/index.ts --root ./src --outdir ./dist --target node --packages external --splitting --sourcemap=linked && tsc -p tsconfig.build.json",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",

@@ -20,6 +20,57 @@ export class ProviderError extends Error {
   }
 }
 
+/** Resolve the base URL for a provider, falling back to the local Ollama one. */
+function resolveBaseURL(config: ProviderConfig): string {
+  return (config.baseURL ?? "http://localhost:11434/v1").replace(/\/$/, "");
+}
+
+/**
+ * List the model ids the provider's endpoint reports, via the OpenAI-compatible
+ * `GET /models` route (supported by Ollama, LM Studio, llama.cpp, vLLM, …).
+ * Throws {@link ProviderError} if the endpoint is unreachable or errors.
+ */
+/** How long to wait for the model-list endpoint before giving up. */
+const LIST_TIMEOUT_MS = 5000;
+
+export async function listModels(config: ProviderConfig): Promise<string[]> {
+  const baseURL = resolveBaseURL(config);
+  const headers: Record<string, string> = {};
+  const apiKey = config.apiKeyEnv ? process.env[config.apiKeyEnv] : undefined;
+  if (apiKey) headers["Authorization"] = `Bearer ${apiKey}`;
+
+  // Bound the request so a hung/unreachable endpoint can't freeze /model list.
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), LIST_TIMEOUT_MS);
+
+  let res: Response;
+  try {
+    res = await fetch(`${baseURL}/models`, { headers, signal: controller.signal });
+  } catch (err) {
+    if (err instanceof Error && err.name === "AbortError") {
+      throw new ProviderError(
+        `Timed out after ${LIST_TIMEOUT_MS / 1000}s reaching ${baseURL}.`,
+      );
+    }
+    throw new ProviderError(
+      `Cannot reach ${baseURL}: ${err instanceof Error ? err.message : String(err)}`,
+    );
+  } finally {
+    clearTimeout(timer);
+  }
+  if (!res.ok) {
+    throw new ProviderError(
+      `Model list request failed (${res.status} ${res.statusText}).`,
+    );
+  }
+
+  const body = (await res.json()) as { data?: Array<{ id?: unknown }> };
+  return (body.data ?? [])
+    .map((m) => m.id)
+    .filter((id): id is string => typeof id === "string")
+    .sort();
+}
+
 /** Resolve a {@link ProviderConfig} to an AI SDK {@link LanguageModel}. */
 function createLanguageModel(config: ProviderConfig): LanguageModel {
   switch (config.kind) {
@@ -30,7 +81,7 @@ function createLanguageModel(config: ProviderConfig): LanguageModel {
         : undefined;
       const provider = createOpenAICompatible({
         name: config.kind,
-        baseURL: config.baseURL ?? "http://localhost:11434/v1",
+        baseURL: resolveBaseURL(config),
         apiKey: apiKey ?? "not-needed",
       });
       return provider(config.model);
