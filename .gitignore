@@ -6,3 +6,6 @@ coverage/
 .env
 .env.*
 !.env.example
+
+# adventure save files (created at play time)
+**/saves/

@@ -236,30 +236,9 @@ describe("App", () => {
     unmount();
   });
 
-  it("walks command history with up/down arrows (bash-style)", async () => {
-    const UP = "\u001b[A";
-    const DOWN = "\u001b[B";
-    const { lastFrame, stdin, unmount } = mount();
-
-    // Two commands whose recalled text doesn't appear in their output, so the
-    // input line is the only place they can show up.
-    await type(stdin, "/save alpha");
-    await type(stdin, "/save beta");
-
-    stdin.write(UP); // most recent
-    await expect.poll(() => lastFrame()).toContain("/save beta");
-
-    stdin.write(UP); // older
-    await expect.poll(() => lastFrame()).toContain("/save alpha");
-    expect(lastFrame()).not.toContain("> /save beta");
-
-    stdin.write(DOWN); // newer again
-    await expect.poll(() => lastFrame()).toContain("/save beta");
-
-    stdin.write(DOWN); // past newest → empty draft restored
-    await expect.poll(() => !lastFrame()?.includes("/save beta"));
-    unmount();
-  });
+  // Input-line editing and Up/Down history are covered by
+  // PromptInput.test.tsx (the live input line is not reliably readable via
+  // lastFrame in ink-testing-library).
 
   it("starts and runs slash commands even when the model cannot be built", async () => {
     const makeModel = () => {
