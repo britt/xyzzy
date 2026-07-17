@@ -205,6 +205,10 @@ export function createDetector(config: ProviderConfig): Detector {
       const { object } = await generateObject({
         model: languageModel,
         schema,
+        // Force JSON mode (response_format) rather than the SDK's default
+        // "auto" -> tool mode, which sends an object `tool_choice` that local
+        // servers like LM Studio reject with HTTP 400. See xyzzy.log.
+        mode: "json",
         system: DETECT_SYSTEM,
         prompt,
         abortSignal: AbortSignal.timeout(DETECT_TIMEOUT_MS),
