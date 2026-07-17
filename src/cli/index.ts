@@ -7,6 +7,7 @@ import { validate } from "./commands/validate.js";
 import {
   configAdd,
   configList,
+  configModels,
   configTest,
   configUse,
 } from "./commands/config.js";
@@ -82,6 +83,11 @@ export function buildProgram(): Command {
     .command("test")
     .argument("[name]", "provider to ping (defaults to the configured default)")
     .action((name?: string) => configTest(name));
+  config
+    .command("models")
+    .argument("[name]", "provider to query (defaults to the configured default)")
+    .description("list the models the provider's endpoint reports")
+    .action((name?: string) => configModels(name));
 
   return program;
 }
