@@ -55,29 +55,23 @@ afterEach(() => {
 });
 
 describe("createDetector wire format", () => {
-  it("uses a json_schema response_format for the lmstudio kind", async () => {
-    const { detection, body } = await captureRequest({
-      kind: "lmstudio",
-      baseURL: "http://localhost:9/v1",
-      model: "m1",
+  // LM Studio rejects both an object `tool_choice` and `{type:"json_object"}`,
+  // accepting only `json_schema`. That is the family default, so BOTH the
+  // explicit lmstudio kind and a generic openai-compatible config send it.
+  for (const kind of ["lmstudio", "openai-compatible"] as const) {
+    it(`sends a json_schema response_format for the ${kind} kind`, async () => {
+      const { detection, body } = await captureRequest({
+        kind,
+        baseURL: "http://localhost:9/v1",
+        model: "m1",
+      });
+      expect(detection).toEqual({ move: "down", advancedBeats: [] });
+      expect(body.tool_choice).toBeUndefined();
+      expect(body.response_format?.type).toBe("json_schema");
+      expect(body.response_format?.json_schema?.schema).toBeDefined();
+      expect(
+        body.response_format.json_schema.schema.properties.move.enum,
+      ).toEqual(["none", "down"]);
     });
-    expect(detection).toEqual({ move: "down", advancedBeats: [] });
-    // LM Studio accepts only json_schema — never object tool_choice or json_object.
-    expect(body.tool_choice).toBeUndefined();
-    expect(body.response_format?.type).toBe("json_schema");
-    expect(body.response_format?.json_schema?.schema).toBeDefined();
-    expect(body.response_format.json_schema.schema.properties.move.enum).toEqual(
-      ["none", "down"],
-    );
-  });
-
-  it("uses a plain json_object response_format for the generic openai-compatible kind", async () => {
-    const { body } = await captureRequest({
-      kind: "openai-compatible",
-      baseURL: "http://localhost:9/v1",
-      model: "m1",
-    });
-    expect(body.tool_choice).toBeUndefined();
-    expect(body.response_format?.type).toBe("json_object");
-  });
+  }
 });

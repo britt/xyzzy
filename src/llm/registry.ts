@@ -199,21 +199,12 @@ const DETECT_SYSTEM =
  * `generateObject` call per turn against the per-turn schema built from the
  * current exits and active beats, bounded by a timeout.
  */
-/**
- * Provider kinds whose servers require `json_schema` structured output (rather
- * than a bare `json_object`). LM Studio is the concrete case: it rejects both an
- * object `tool_choice` and `{type:"json_object"}` (see xyzzy.log). Keyed off the
- * kind the user already picked — never a wire-format setting they must reason
- * about.
- */
-const JSON_SCHEMA_KINDS: ReadonlySet<ProviderConfig["kind"]> = new Set([
-  "lmstudio",
-]);
-
 export function createDetector(config: ProviderConfig): Detector {
-  const languageModel = createLanguageModel(config, {
-    structuredOutputs: JSON_SCHEMA_KINDS.has(config.kind),
-  });
+  // Structured output goes out as `response_format: {type:"json_schema"}`, which
+  // LM Studio *requires* and OpenAI + modern local servers all accept. This is
+  // the family default so any openai-compatible config (however labelled) works
+  // without the user reasoning about wire formats. See xyzzy.log.
+  const languageModel = createLanguageModel(config, { structuredOutputs: true });
   return {
     async detect(ctx): Promise<Detection> {
       const schema = buildDetectionSchema(ctx.exits, ctx.activeBeats);
