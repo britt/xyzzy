@@ -114,10 +114,23 @@ The initial conditions applied when a new game begins.
 
 ### StoryBeat
 
-Optional narrative goals or triggers that give the story direction. Beats are
-advanced during play via the `advanceBeat` action. (Fields are intentionally
-lightweight in v1: an `id`, a `description`, and optional trigger notes for the
-model.)
+Optional narrative goals that give the story direction. Beats are advanced
+during play via the `advanceBeat` action, which the model emits when it judges
+the beat's `trigger` satisfied.
+
+| Field         | Type       | Required | Description                                                  |
+| ------------- | ---------- | -------- | ------------------------------------------------------------ |
+| `id`          | `string`   | yes      | Stable beat id (used by the `beat:<id>` flag).               |
+| `description` | `string`   | yes      | Goal shown to the model under "Active goals" until advanced. |
+| `trigger`     | `string`   | no       | Natural-language note telling the model _when_ to advance.   |
+| `effects`     | `Action[]` | no       | State changes applied automatically when the beat advances.  |
+
+`effects` are pre-authored `Action`s — the same validated mutation vocabulary
+the model uses (see § Actions). When the model advances a beat, the engine
+applies its effects atomically alongside the `beat:<id>` flag, so a beat's
+consequences can never be half-applied. Effects run once: re-advancing an
+already-advanced beat is a no-op. They are additive — the model may still emit
+its own mutations in the same turn.
 
 ---
 

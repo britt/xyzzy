@@ -3,6 +3,7 @@ import {
   buildSystemPrompt,
   canonicalizeAction,
   EmptyNarrationError,
+  expandBeatEffects,
   runTurn,
   type TurnDeps,
 } from "./turnLoop.js";
@@ -52,6 +53,58 @@ describe("canonicalizeAction", () => {
     expect(
       canonicalizeAction(adventure, { type: "moveTo", room: "attic" }),
     ).toEqual({ type: "moveTo", room: "attic" });
+  });
+});
+
+describe("expandBeatEffects", () => {
+  const withBeats: Adventure = {
+    meta: { id: "a", title: "A", version: "1" },
+    premise: "p",
+    start: { room: "start" },
+    beats: [
+      {
+        id: "claim",
+        description: "Take the gem.",
+        effects: [
+          { type: "setGameState", key: "treasureClaimed", value: true },
+        ],
+      },
+      { id: "plain", description: "A beat with no effects." },
+    ],
+  };
+
+  it("inserts a beat's effects before the advanceBeat action", () => {
+    const state = newGameState(withBeats, "c");
+    expect(
+      expandBeatEffects(withBeats, state, [
+        { type: "advanceBeat", beatId: "claim" },
+      ]),
+    ).toEqual([
+      { type: "setGameState", key: "treasureClaimed", value: true },
+      { type: "advanceBeat", beatId: "claim" },
+    ]);
+  });
+
+  it("does not reapply effects when the beat is already advanced", () => {
+    const state = {
+      ...newGameState(withBeats, "c"),
+      flags: { "beat:claim": "advanced" },
+    };
+    expect(
+      expandBeatEffects(withBeats, state, [
+        { type: "advanceBeat", beatId: "claim" },
+      ]),
+    ).toEqual([{ type: "advanceBeat", beatId: "claim" }]);
+  });
+
+  it("passes through non-beat actions and effect-less beats unchanged", () => {
+    const state = newGameState(withBeats, "c");
+    const actions = [
+      { type: "moveTo", room: "hall" },
+      { type: "advanceBeat", beatId: "plain" },
+      { type: "advanceBeat", beatId: "unknown" },
+    ] as const;
+    expect(expandBeatEffects(withBeats, state, [...actions])).toEqual(actions);
   });
 });
 
@@ -105,6 +158,38 @@ describe("runTurn", () => {
     expect(state.transcript[1]).toMatchObject({ role: "narrator", turn: 1 });
     expect(state.transcript[1]!.text).toContain("You head north.");
     expect(state.updatedAt).toBe("2026-07-15T00:00:00.000Z");
+  });
+
+  it("applies a beat's declared effects when the model advances it", async () => {
+    const gem: Adventure = {
+      meta: { id: "g", title: "G", version: "1" },
+      premise: "p",
+      start: { room: "start" },
+      entities: { rooms: [{ id: "start", name: "Start", description: "d" }] },
+      beats: [
+        {
+          id: "claim",
+          description: "Take the gem.",
+          effects: [
+            { type: "setGameState", key: "treasureClaimed", value: true },
+          ],
+        },
+      ],
+    };
+    // Model advances the beat but never emits the setGameState itself.
+    const model = new FakeNarratorModel([
+      {
+        narration: "You pocket the gem.",
+        actions: [{ type: "advanceBeat", beatId: "claim" }],
+      },
+    ]);
+    const { state } = await runTurn(
+      { adventure: gem, model, clock: () => "t" },
+      newGameState(gem, "c"),
+      "take gem",
+    );
+    expect(state.state.treasureClaimed).toBe(true); // effect applied by the engine
+    expect(state.flags["beat:claim"]).toBe("advanced");
   });
 
   it("always appends the complete list of exits to the narration", async () => {

@@ -15,7 +15,9 @@ both a playable demo and a reference for authoring your own worlds.
   seeded `history`, and an open `state` bag (`trust`, `mood`, `bribed`) the
   model updates during play.
 - **Story beats** — three optional goals that give the model narrative
-  direction without scripting the outcome.
+  direction without scripting the outcome. Each carries declarative `effects`
+  (e.g. lighting the lantern sets `lanternLit`) that the engine applies
+  automatically when the beat advances.
 
 ## Play it
 
