@@ -169,10 +169,11 @@ describe("runTurn", () => {
     );
 
     expect(narration).not.toContain("[n]"); // internal id gone
-    expect(narration.match(/Exits:/g)).toHaveLength(1); // exactly one exits line
-    expect(narration).toContain("north to North Room");
-    expect(narration).toContain("east to East Room");
-    expect(narration).toContain("west to West Room");
+    expect(narration.match(/Exits/gi)).toHaveLength(1); // exactly one exits block
+    // bulleted list under an "Exits" header
+    expect(narration).toContain("Exits\n- north to North Room");
+    expect(narration).toContain("- east to East Room");
+    expect(narration).toContain("- west to West Room");
     expect(narration).toContain("You stand in a hub."); // prose preserved
   });
 

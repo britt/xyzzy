@@ -93,14 +93,14 @@ export function exitsFooter(
   if (!room) return null;
 
   const exits = Object.entries(room.exits ?? {});
-  if (exits.length === 0) return "Exits: none — there is no obvious way out.";
+  if (exits.length === 0) return "Exits\n- none (no obvious way out)";
 
   const byId = new Map(rooms.map((r) => [r.id, r]));
-  const parts = exits.map(([dir, target]) => {
+  const bullets = exits.map(([dir, target]) => {
     const dest = byId.get(target);
-    return dest ? `${dir} to ${dest.name}` : dir;
+    return dest ? `- ${dir} to ${dest.name}` : `- ${dir}`;
   });
-  return `Exits: ${parts.join(", ")}.`;
+  return `Exits\n${bullets.join("\n")}`;
 }
 
 /**
@@ -110,7 +110,13 @@ export function exitsFooter(
  * and usually wrong.
  */
 export function stripProseExits(text: string): string {
-  return text.replace(/\s*Exits?:[^\n]*/gi, "").trim();
+  return text
+    // Bulleted "Exits" header + bullet lines (the engine's own footer format,
+    // in case the model echoes it back from the transcript).
+    .replace(/\n*[ \t]*Exits\b[ \t]*:?[ \t]*\n(?:[ \t]*[-*•][^\n]*\n?)+/gi, "\n")
+    // Inline "Exits: …" (the digest format the model tends to copy).
+    .replace(/\s*Exits?:[^\n]*/gi, "")
+    .trim();
 }
 
 /** System prompt: premise + tone + the rules that steer tool use. */
