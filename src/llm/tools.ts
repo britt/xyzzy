@@ -16,7 +16,10 @@ export interface ActionToolDef {
 
 export const ACTION_TOOLS: Record<ActionType, ActionToolDef> = {
   moveTo: {
-    description: "Move the player to a room.",
+    description:
+      "Move the player. Pass an exit direction from the current room " +
+      '(e.g. "north") — shown in the state digest\'s Exits line — or a room ' +
+      "id/name for a non-adjacent jump.",
     parameters: z.object({ room: z.string() }),
   },
   addItem: {

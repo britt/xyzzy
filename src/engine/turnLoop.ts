@@ -1,5 +1,5 @@
 import { Action } from "../world/actions.js";
-import type { Adventure, GameState } from "../world/schema.js";
+import type { Adventure, GameState, Room } from "../world/schema.js";
 import type { NarratorContext, NarratorModel } from "../llm/NarratorModel.js";
 import { buildDigest, isBeatAdvanced } from "./digest.js";
 import { reduceAll } from "./reducer.js";
@@ -24,9 +24,32 @@ function resolveRef(
   return byName ? byName.id : ref;
 }
 
+/**
+ * Resolve a `moveTo` target. A token matching one of the current room's exit
+ * directions (e.g. "north", case-insensitive) maps to that exit's destination
+ * room id — so "go north" moves reliably even when the model passes the bare
+ * direction instead of naming the room. Anything else falls back to id/name
+ * resolution (and an unresolved target is later dropped by the move filter).
+ */
+function resolveMoveTarget(
+  rooms: ReadonlyArray<Room>,
+  state: GameState,
+  ref: string,
+): string {
+  const exits = rooms.find((r) => r.id === state.location)?.exits;
+  if (exits) {
+    const dir = Object.keys(exits).find(
+      (d) => d.toLowerCase() === ref.toLowerCase(),
+    );
+    if (dir) return exits[dir]!;
+  }
+  return resolveRef(rooms, ref);
+}
+
 /** Rewrite an action's entity references to canonical ids. */
 export function canonicalizeAction(
   adventure: Adventure,
+  state: GameState,
   action: Action,
 ): Action {
   const rooms = adventure.entities?.rooms ?? [];
@@ -34,7 +57,7 @@ export function canonicalizeAction(
   const chars = adventure.entities?.characters ?? [];
   switch (action.type) {
     case "moveTo":
-      return { ...action, room: resolveRef(rooms, action.room) };
+      return { ...action, room: resolveMoveTarget(rooms, state, action.room) };
     case "addItem":
       return { ...action, item: resolveRef(items, action.item) };
     case "removeItem":
@@ -152,6 +175,12 @@ export function buildSystemPrompt(adventure: Adventure): string {
     "in prose without also emitting the matching tool call. Keep narration to a",
     "few sentences.",
     "",
+    "MOVEMENT: When the player goes somewhere (e.g. \"go north\", \"enter the",
+    "cave\", \"head back\"), you MUST emit a moveTo tool call — pass the exit",
+    "direction (e.g. \"north\") or the destination room. Narrating movement in",
+    "prose without a moveTo call leaves the player in the same room, which will",
+    "contradict the state digest on the next turn.",
+    "",
     "EXITS: Do NOT list the room's exits yourself. After your narration the game",
     "automatically appends the complete, authoritative list of exits and their",
     "directions, so just describe the scene and never enumerate exits in prose",
@@ -207,7 +236,7 @@ export async function runTurn(
   const actions = result.actions
     .map((a) => Action.safeParse(a))
     .filter((r) => r.success)
-    .map((r) => canonicalizeAction(adventure, r.data))
+    .map((r) => canonicalizeAction(adventure, state, r.data))
     .filter((action) => {
       // The model may only move to rooms defined in the game file.
       const target =
