@@ -71,6 +71,23 @@ export async function configUse(name: string): Promise<void> {
   console.log(`Default provider is now "${name}".`);
 }
 
+/**
+ * `config models [name]` — list every model the provider's endpoint reports
+ * (defaults to the configured default provider). Queries the OpenAI-compatible
+ * `/models` route via {@link listModels}.
+ */
+export async function configModels(name?: string): Promise<void> {
+  const provider = await resolveProvider({ providerFlag: name });
+  const models = await listModels(provider);
+  if (models.length === 0) {
+    console.log(
+      `No models reported by ${provider.baseURL ?? "(default endpoint)"}.`,
+    );
+    return;
+  }
+  for (const id of models) console.log(id);
+}
+
 /** `config test [name]` — ping a provider's endpoint (defaults to the default). */
 export async function configTest(name?: string): Promise<void> {
   const provider = await resolveProvider({ providerFlag: name });

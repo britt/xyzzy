@@ -2,7 +2,13 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { configAdd, configList, configTest, configUse } from "./config.js";
+import {
+  configAdd,
+  configList,
+  configModels,
+  configTest,
+  configUse,
+} from "./config.js";
 import { readGlobalConfig } from "../../config/store.js";
 
 const savedXdg = process.env.XDG_CONFIG_HOME;
@@ -117,5 +123,56 @@ describe("config test", () => {
     );
 
     await expect(configTest("a")).rejects.toThrow();
+  });
+});
+
+describe("config models", () => {
+  it("lists every model the endpoint reports", async () => {
+    const out = captureLog();
+    await configAdd("a", { baseUrl: "http://localhost:9/v1", model: "m1" });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        async () =>
+          new Response(
+            JSON.stringify({
+              data: [{ id: "gpt-4o" }, { id: "o1" }, { id: "gpt-3.5" }],
+            }),
+            { status: 200 },
+          ),
+      ),
+    );
+
+    await configModels("a");
+    const printed = out();
+    expect(printed).toContain("gpt-4o");
+    expect(printed).toContain("o1");
+    expect(printed).toContain("gpt-3.5");
+  });
+
+  it("reports when the endpoint lists no models", async () => {
+    const out = captureLog();
+    await configAdd("a", { baseUrl: "http://localhost:9/v1", model: "m1" });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        async () => new Response(JSON.stringify({ data: [] }), { status: 200 }),
+      ),
+    );
+
+    await configModels("a");
+    expect(out()).toContain("No models");
+  });
+
+  it("throws when the endpoint is unreachable", async () => {
+    await configAdd("a", { baseUrl: "http://localhost:9/v1", model: "m1" });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => {
+        throw new Error("ECONNREFUSED");
+      }),
+    );
+
+    await expect(configModels("a")).rejects.toThrow();
   });
 });
