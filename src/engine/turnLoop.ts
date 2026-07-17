@@ -78,6 +78,39 @@ export function canonicalizeAction(
 }
 
 /**
+ * Validate raw tool-call args, canonicalize entity refs, and drop moves to
+ * rooms not defined in the adventure. `exclude` skips action types owned by
+ * another path (detection owns moveTo/advanceBeat during narration).
+ */
+export function processActions(
+  adventure: Adventure,
+  state: GameState,
+  raw: unknown[],
+  exclude: ReadonlyArray<Action["type"]> = [],
+): Action[] {
+  const rooms = adventure.entities?.rooms ?? [];
+  const roomIds = new Set(rooms.map((r) => r.id));
+  const restrictRooms = rooms.length > 0;
+
+  return raw
+    .map((a) => Action.safeParse(a))
+    .flatMap((r) => (r.success ? [r.data] : []))
+    .filter((a) => !exclude.includes(a.type))
+    .map((a) => canonicalizeAction(adventure, state, a))
+    .filter((action) => {
+      const target =
+        action.type === "moveTo" || action.type === "moveCharacter"
+          ? action.room
+          : null;
+      if (target !== null && restrictRooms && !roomIds.has(target)) {
+        log.warn(`rejected move to undefined room "${target}"`, { action });
+        return false;
+      }
+      return true;
+    });
+}
+
+/**
  * Expand any `advanceBeat` into the beat's declared `effects` followed by the
  * advanceBeat itself, so a beat's state changes apply atomically alongside its
  * flag flip (see docs/data-model.md § StoryBeat). Effects are skipped when the
@@ -224,31 +257,7 @@ export async function runTurn(
     if (result.narration.trim() === "") throw new EmptyNarrationError();
   }
 
-  // Validate tool-call args; drop anything malformed before the reducer, then
-  // canonicalize entity refs (a model may pass a room/item/character name in
-  // place of its id).
-  const rooms = adventure.entities?.rooms ?? [];
-  const roomIds = new Set(rooms.map((r) => r.id));
-  // Only constrain movement when the world actually defines rooms; a bare-
-  // premise adventure improvises its geography and has nothing to check against.
-  const restrictRooms = rooms.length > 0;
-
-  const actions = result.actions
-    .map((a) => Action.safeParse(a))
-    .filter((r) => r.success)
-    .map((r) => canonicalizeAction(adventure, state, r.data))
-    .filter((action) => {
-      // The model may only move to rooms defined in the game file.
-      const target =
-        action.type === "moveTo" || action.type === "moveCharacter"
-          ? action.room
-          : null;
-      if (target !== null && restrictRooms && !roomIds.has(target)) {
-        log.warn(`rejected move to undefined room "${target}"`, { action });
-        return false;
-      }
-      return true;
-    });
+  const actions = processActions(adventure, state, result.actions);
 
   const nextTurn = state.turn + 1;
   // Expand each advanced beat into its authored effects so they apply
