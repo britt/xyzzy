@@ -29,7 +29,22 @@ const AI_SDK_FIELDS = ["statusCode", "url", "responseBody"] as const;
  * "Invalid JSON response".
  */
 export function describeError(err: unknown): Record<string, unknown> {
-  if (!(err instanceof Error)) return { value: String(err) };
+  if (!(err instanceof Error)) {
+    // Non-Error throwables — notably the DOMException that AbortSignal.timeout
+    // throws, which is NOT an Error in Node and whose fields are non-enumerable
+    // (so `JSON.stringify` renders it as `{}`). Pull name/message off directly.
+    if (err && typeof err === "object") {
+      const anyErr = err as Record<string, unknown>;
+      if ("name" in anyErr || "message" in anyErr) {
+        return {
+          name: anyErr.name,
+          message: anyErr.message,
+          value: String(err),
+        };
+      }
+    }
+    return { value: String(err) };
+  }
 
   const out: Record<string, unknown> = { name: err.name, message: err.message };
   const anyErr = err as unknown as Record<string, unknown>;

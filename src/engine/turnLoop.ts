@@ -6,7 +6,7 @@ import { buildDetectionContext } from "../llm/detection.js";
 import { buildDigest, isBeatAdvanced } from "./digest.js";
 import { reduceAll } from "./reducer.js";
 import { appendMessage, windowTranscript } from "./transcript.js";
-import { log } from "../util/log.js";
+import { describeError, log } from "../util/log.js";
 
 /**
  * Resolve a room/item/character reference to its canonical id. Models routinely
@@ -265,7 +265,10 @@ export async function runTurn(
         expandBeatEffects(adventure, state, detectedActions),
       );
     } catch (err) {
-      log.warn("detection failed; continuing without it", { err });
+      log.warn(
+        "detection failed; continuing without it",
+        describeError(err),
+      );
     }
   }
 

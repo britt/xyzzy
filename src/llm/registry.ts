@@ -184,8 +184,13 @@ export function createModel(config: ProviderConfig): NarratorModel {
   };
 }
 
-/** How long to wait for the detection call before aborting the turn's pre-pass. */
-const DETECT_TIMEOUT_MS = 8000;
+/**
+ * How long to wait for the detection call before aborting the turn's pre-pass.
+ * Local models doing constrained JSON generation are slow — especially on a cold
+ * first turn — so this is generous; it only exists to bound a genuinely hung
+ * server, not to cut off normal (if slow) inference.
+ */
+const DETECT_TIMEOUT_MS = 120_000;
 
 const DETECT_SYSTEM =
   "You extract structured intent from a text-adventure player's command. " +
