@@ -1,6 +1,11 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { generateObject } from "ai";
-import { createDetector, listModels, ProviderError } from "./registry.js";
+import {
+  createDetector,
+  listModels,
+  NARRATION_TOOL_NAMES,
+  ProviderError,
+} from "./registry.js";
 import type { ProviderConfig } from "../config/schema.js";
 
 vi.mock("ai", async (orig) => ({
@@ -62,6 +67,28 @@ describe("listModels", () => {
       throw new Error("ECONNREFUSED");
     });
     await expect(listModels(config)).rejects.toBeInstanceOf(ProviderError);
+  });
+});
+
+describe("NARRATION_TOOL_NAMES", () => {
+  it("excludes moveTo and advanceBeat (owned by detection)", () => {
+    expect(NARRATION_TOOL_NAMES).not.toContain("moveTo");
+    expect(NARRATION_TOOL_NAMES).not.toContain("advanceBeat");
+  });
+
+  it("keeps exactly the other narration mutation tools", () => {
+    // Full-set assertion so an accidental future exclusion is caught.
+    expect([...NARRATION_TOOL_NAMES].sort()).toEqual(
+      [
+        "addItem",
+        "appendCharacterHistory",
+        "moveCharacter",
+        "removeItem",
+        "setCharacterState",
+        "setFlag",
+        "setGameState",
+      ].sort(),
+    );
   });
 });
 

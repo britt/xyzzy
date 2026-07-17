@@ -41,9 +41,11 @@ describe("buildSystemPrompt", () => {
     expect(prompt).toContain(adventure.premise.toLowerCase());
   });
 
-  it("tells the model to emit a moveTo tool call for player movement", () => {
+  it("does not ask the narration model to move (detection owns movement)", () => {
     const prompt = buildSystemPrompt(adventure).toLowerCase();
-    expect(prompt).toContain("moveto");
+    expect(prompt).not.toContain("moveto");
+    // Positive guidance that movement is engine-handled should remain.
+    expect(prompt).toContain("automatically");
   });
 });
 

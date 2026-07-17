@@ -21,6 +21,19 @@ import { ACTION_TOOLS, toAction } from "./tools.js";
 /** Max tool-loop steps per turn (model may narrate + emit several mutations). */
 const MAX_STEPS = 6;
 
+/** Action types the detection pre-pass owns; not offered to the narration model. */
+const DETECTION_OWNED = ["moveTo", "advanceBeat"] as const;
+
+/**
+ * The tool names the narration model is offered: every reducer action tool
+ * except the detection-owned movement/beat ones (which the pre-pass decides).
+ */
+export const NARRATION_TOOL_NAMES = (
+  Object.keys(ACTION_TOOLS) as (keyof typeof ACTION_TOOLS)[]
+).filter(
+  (n) => !DETECTION_OWNED.includes(n as (typeof DETECTION_OWNED)[number]),
+);
+
 export class ProviderError extends Error {
   constructor(message: string) {
     super(message);
@@ -124,18 +137,21 @@ export function createModel(config: ProviderConfig): NarratorModel {
       const actions: Action[] = [];
 
       const tools = Object.fromEntries(
-        Object.entries(ACTION_TOOLS).map(([name, def]) => [
-          name,
-          tool({
-            description: def.description,
-            parameters: def.parameters,
-            execute: async (args: unknown) => {
-              const action = toAction(name, args);
-              if (action) actions.push(action);
-              return "ok";
-            },
-          }),
-        ]),
+        NARRATION_TOOL_NAMES.map((name) => {
+          const def = ACTION_TOOLS[name];
+          return [
+            name,
+            tool({
+              description: def.description,
+              parameters: def.parameters,
+              execute: async (args: unknown) => {
+                const action = toAction(name, args);
+                if (action) actions.push(action);
+                return "ok";
+              },
+            }),
+          ];
+        }),
       );
 
       const result = await generateText({
