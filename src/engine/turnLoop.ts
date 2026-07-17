@@ -29,6 +29,31 @@ export class EmptyNarrationError extends Error {
 
 const DEFAULT_TRANSCRIPT_WINDOW = 20;
 
+/**
+ * Player-facing, authoritative list of the current room's exits and their
+ * directions. Returns null when the location is freeform or an improvised room
+ * (no authored exits to enumerate), leaving the model's prose to stand.
+ */
+export function exitsFooter(
+  adventure: Adventure,
+  state: GameState,
+): string | null {
+  if (state.location === null) return null;
+  const rooms = adventure.entities?.rooms ?? [];
+  const room = rooms.find((r) => r.id === state.location);
+  if (!room) return null;
+
+  const exits = Object.entries(room.exits ?? {});
+  if (exits.length === 0) return "Exits: none — there is no obvious way out.";
+
+  const byId = new Map(rooms.map((r) => [r.id, r]));
+  const parts = exits.map(([dir, target]) => {
+    const dest = byId.get(target);
+    return dest ? `${dir} to ${dest.name}` : dir;
+  });
+  return `Exits: ${parts.join(", ")}.`;
+}
+
 /** System prompt: premise + tone + the rules that steer tool use. */
 export function buildSystemPrompt(adventure: Adventure): string {
   return [
@@ -41,12 +66,10 @@ export function buildSystemPrompt(adventure: Adventure): string {
     "in prose without also emitting the matching tool call. Keep narration to a",
     "few sentences.",
     "",
-    "EXITS: Whenever you describe a room — on entering it, when the player looks",
-    "around, or when first introducing it — you MUST end the description by",
-    'explicitly listing every available exit with its direction, e.g. "Exits:',
-    'north to the hallway, east to a dark alcove." Take the exits from the state',
-    "digest's Exits line when it lists them; never omit or contradict them. If a",
-    "room genuinely has no exits, say there are no obvious ways out.",
+    "EXITS: Do NOT list the room's exits yourself. After your narration the game",
+    "automatically appends the complete, authoritative list of exits and their",
+    "directions, so just describe the scene and never enumerate exits in prose",
+    "(listing only some of them would contradict that authoritative list).",
     "",
     "PREMISE:",
     adventure.premise.trim(),
@@ -94,6 +117,14 @@ export async function runTurn(
 
   const nextTurn = state.turn + 1;
   const reduced = reduceAll(state, actions);
+
+  // Deterministically append the complete list of exits so the player always
+  // sees every way out, regardless of whether the model listed them.
+  const footer = exitsFooter(adventure, reduced);
+  const narration = footer
+    ? `${result.narration.trimEnd()}\n\n${footer}`
+    : result.narration;
+
   let transcript = appendMessage(reduced.transcript, {
     role: "player",
     text: input,
@@ -101,12 +132,12 @@ export async function runTurn(
   });
   transcript = appendMessage(transcript, {
     role: "narrator",
-    text: result.narration,
+    text: narration,
     turn: nextTurn,
   });
 
   return {
-    narration: result.narration,
+    narration,
     state: { ...reduced, turn: nextTurn, transcript, updatedAt: now },
   };
 }
