@@ -4,6 +4,55 @@ import type { NarratorContext, NarratorModel } from "../llm/NarratorModel.js";
 import { buildDigest } from "./digest.js";
 import { reduceAll } from "./reducer.js";
 import { appendMessage, windowTranscript } from "./transcript.js";
+import { log } from "../util/log.js";
+
+/**
+ * Resolve a room/item/character reference to its canonical id. Models routinely
+ * pass the display *name* (e.g. "The Great Cavern") instead of the id
+ * ("cavern"); storing that name would break every id-based lookup (exits,
+ * digest, save). Accept an id as-is, map a case-insensitive name match to its
+ * id, and otherwise leave the ref untouched (an improvised entity).
+ */
+function resolveRef(
+  entities: ReadonlyArray<{ id: string; name: string }>,
+  ref: string,
+): string {
+  if (entities.some((e) => e.id === ref)) return ref;
+  const byName = entities.find(
+    (e) => e.name.toLowerCase() === ref.toLowerCase(),
+  );
+  return byName ? byName.id : ref;
+}
+
+/** Rewrite an action's entity references to canonical ids. */
+export function canonicalizeAction(
+  adventure: Adventure,
+  action: Action,
+): Action {
+  const rooms = adventure.entities?.rooms ?? [];
+  const items = adventure.entities?.items ?? [];
+  const chars = adventure.entities?.characters ?? [];
+  switch (action.type) {
+    case "moveTo":
+      return { ...action, room: resolveRef(rooms, action.room) };
+    case "addItem":
+      return { ...action, item: resolveRef(items, action.item) };
+    case "removeItem":
+      return { ...action, item: resolveRef(items, action.item) };
+    case "moveCharacter":
+      return {
+        ...action,
+        charId: resolveRef(chars, action.charId),
+        room: resolveRef(rooms, action.room),
+      };
+    case "setCharacterState":
+      return { ...action, charId: resolveRef(chars, action.charId) };
+    case "appendCharacterHistory":
+      return { ...action, charId: resolveRef(chars, action.charId) };
+    default:
+      return action;
+  }
+}
 
 export interface TurnResult {
   narration: string;
@@ -119,11 +168,31 @@ export async function runTurn(
     if (result.narration.trim() === "") throw new EmptyNarrationError();
   }
 
-  // Validate tool-call args; drop anything malformed before the reducer.
+  // Validate tool-call args; drop anything malformed before the reducer, then
+  // canonicalize entity refs (a model may pass a room/item/character name in
+  // place of its id).
+  const rooms = adventure.entities?.rooms ?? [];
+  const roomIds = new Set(rooms.map((r) => r.id));
+  // Only constrain movement when the world actually defines rooms; a bare-
+  // premise adventure improvises its geography and has nothing to check against.
+  const restrictRooms = rooms.length > 0;
+
   const actions = result.actions
     .map((a) => Action.safeParse(a))
     .filter((r) => r.success)
-    .map((r) => r.data);
+    .map((r) => canonicalizeAction(adventure, r.data))
+    .filter((action) => {
+      // The model may only move to rooms defined in the game file.
+      const target =
+        action.type === "moveTo" || action.type === "moveCharacter"
+          ? action.room
+          : null;
+      if (target !== null && restrictRooms && !roomIds.has(target)) {
+        log.warn(`rejected move to undefined room "${target}"`, { action });
+        return false;
+      }
+      return true;
+    });
 
   const nextTurn = state.turn + 1;
   const reduced = reduceAll(state, actions);

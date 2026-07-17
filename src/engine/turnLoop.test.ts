@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   buildSystemPrompt,
+  canonicalizeAction,
   EmptyNarrationError,
   runTurn,
   type TurnDeps,
@@ -39,7 +40,46 @@ describe("buildSystemPrompt", () => {
   });
 });
 
+describe("canonicalizeAction", () => {
+  it("resolves a room name to its id, leaving ids and unknowns untouched", () => {
+    expect(canonicalizeAction(adventure, { type: "moveTo", room: "Hall" })).toEqual(
+      { type: "moveTo", room: "hall" },
+    );
+    expect(canonicalizeAction(adventure, { type: "moveTo", room: "hall" })).toEqual(
+      { type: "moveTo", room: "hall" },
+    );
+    // improvised room the model invented — pass through unchanged
+    expect(
+      canonicalizeAction(adventure, { type: "moveTo", room: "attic" }),
+    ).toEqual({ type: "moveTo", room: "attic" });
+  });
+});
+
 describe("runTurn", () => {
+  it("stores the room id when the model moves by name (the failure.json bug)", async () => {
+    const model = new FakeNarratorModel([
+      { narration: "You go.", actions: [{ type: "moveTo", room: "Hall" }] },
+    ]);
+    const { state } = await runTurn(
+      deps(model),
+      newGameState(adventure, "c"),
+      "go",
+    );
+    expect(state.location).toBe("hall"); // the id, not "Hall"
+  });
+
+  it("rejects a move to a room not defined in the adventure", async () => {
+    const model = new FakeNarratorModel([
+      {
+        narration: "You try to descend.",
+        actions: [{ type: "moveTo", room: "The Undercity" }],
+      },
+    ]);
+    const start = newGameState(adventure, "c"); // location: "start"
+    const { state } = await runTurn(deps(model), start, "go down");
+    expect(state.location).toBe("start"); // move dropped; player stays put
+  });
+
   it("applies validated actions and appends transcript", async () => {
     const model = new FakeNarratorModel([
       {
