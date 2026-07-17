@@ -9,6 +9,7 @@ import {
 } from "./turnLoop.js";
 import { newGameState } from "./state.js";
 import { FakeNarratorModel, type NarratorModel } from "../llm/NarratorModel.js";
+import { FakeDetector } from "../llm/Detector.js";
 import type { Adventure } from "../world/schema.js";
 
 const adventure: Adventure = {
@@ -40,9 +41,11 @@ describe("buildSystemPrompt", () => {
     expect(prompt).toContain(adventure.premise.toLowerCase());
   });
 
-  it("tells the model to emit a moveTo tool call for player movement", () => {
+  it("does not ask the narration model to move (detection owns movement)", () => {
     const prompt = buildSystemPrompt(adventure).toLowerCase();
-    expect(prompt).toContain("moveto");
+    expect(prompt).not.toContain("moveto");
+    // Positive guidance that movement is engine-handled should remain.
+    expect(prompt).toContain("automatically");
   });
 });
 
@@ -372,5 +375,79 @@ describe("runTurn", () => {
     await expect(
       runTurn(deps(model), newGameState(adventure, "c"), "go"),
     ).rejects.toBeInstanceOf(EmptyNarrationError);
+  });
+
+  it("moves the player when detection returns a direction", async () => {
+    const model = new FakeNarratorModel([{ narration: "You go.", actions: [] }]);
+    const detector = new FakeDetector([{ move: "north", advancedBeats: [] }]);
+    const { state } = await runTurn(
+      { ...deps(model), detector },
+      newGameState(adventure, "c"), // at "start", north -> hall
+      "go north",
+    );
+    expect(state.location).toBe("hall");
+  });
+
+  it("advances a detected beat and applies its effects", async () => {
+    const gem: Adventure = {
+      meta: { id: "g", title: "G", version: "1" },
+      premise: "p",
+      start: { room: "start" },
+      entities: { rooms: [{ id: "start", name: "Start", description: "d" }] },
+      beats: [
+        {
+          id: "claim",
+          description: "Take the gem.",
+          effects: [{ type: "setGameState", key: "treasureClaimed", value: true }],
+        },
+      ],
+    };
+    const model = new FakeNarratorModel([{ narration: "ok", actions: [] }]);
+    const detector = new FakeDetector([{ move: null, advancedBeats: ["claim"] }]);
+    const { state } = await runTurn(
+      { adventure: gem, model, detector, clock: () => "t" },
+      newGameState(gem, "c"),
+      "take gem",
+    );
+    expect(state.flags["beat:claim"]).toBe("advanced");
+    expect(state.state.treasureClaimed).toBe(true);
+  });
+
+  it("degrades to no movement when detection throws", async () => {
+    const model = new FakeNarratorModel([{ narration: "You go.", actions: [] }]);
+    const detector = {
+      detect: () => Promise.reject(new Error("detector down")),
+    };
+    const { state } = await runTurn(
+      { ...deps(model), detector },
+      newGameState(adventure, "c"),
+      "go north",
+    );
+    expect(state.location).toBe("start"); // turn still completes, no move
+  });
+
+  it("ignores moveTo/advanceBeat emitted by the narration model (detection owns them)", async () => {
+    const model = new FakeNarratorModel([
+      { narration: "You go.", actions: [{ type: "moveTo", room: "hall" }] },
+    ]);
+    const detector = new FakeDetector([{ move: null, advancedBeats: [] }]);
+    const { state } = await runTurn(
+      { ...deps(model), detector },
+      newGameState(adventure, "c"),
+      "look",
+    );
+    expect(state.location).toBe("start"); // narration's moveTo dropped
+  });
+
+  it("narrates against the post-move room (new exits footer)", async () => {
+    const model = new FakeNarratorModel([{ narration: "You arrive.", actions: [] }]);
+    const detector = new FakeDetector([{ move: "north", advancedBeats: [] }]);
+    const { narration } = await runTurn(
+      { ...deps(model), detector },
+      newGameState(adventure, "c"),
+      "go north",
+    );
+    // "hall" has no exits -> the dead-end footer, not "start"'s north exit.
+    expect(narration).toContain("no obvious way out");
   });
 });

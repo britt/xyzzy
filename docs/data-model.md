@@ -207,3 +207,28 @@ the reducer runs, so state can never enter an invalid shape.
 | `AppendCharacterHistory(charId, summary)`| Append a summary to a character's `history`.       |
 | `MoveCharacter(charId, room)`            | Move a character to a room.                        |
 | `AdvanceBeat(beatId)`                    | Mark a story beat as advanced.                     |
+
+---
+
+## Turn processing
+
+A turn runs in two phases: **detect → apply → narrate.**
+
+1. **Detect.** A structured detection completion reads the player's input, the
+   current room's exits (with destinations), and the active beats (with their
+   triggers), and returns `{ move, advancedBeats }` — constrained to a per-turn
+   closed-set schema so it can only name a real exit direction or a real beat
+   id. The engine turns these into `MoveTo`/`AdvanceBeat` actions and applies
+   them (running any beat `effects`) before narration.
+2. **Narrate.** The narration model then writes prose against the already-updated
+   state. It keeps the item/flag/character actions above but is **not** offered
+   `MoveTo` or `AdvanceBeat` — those are owned by detection.
+
+Movement and beat advancement therefore do not depend on the narration model
+emitting a tool call, which the local models used here do unreliably. If
+detection fails or times out, the turn degrades to no detected move and still
+completes. See `docs/plans/2026-07-16-action-detection-design.md`.
+
+A beat's own `effects` are trusted authored content: they are reduced directly
+and are **not** run through the undefined-room filter that guards model- and
+detection-emitted moves. An effect that moves the player must name a real room.

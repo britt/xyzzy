@@ -58,7 +58,7 @@ export function buildProgram(): Command {
     .requiredOption("--model <model>", "model id")
     .option(
       "--kind <kind>",
-      "provider kind (openai-compatible|ollama|openai|anthropic)",
+      "provider kind (openai-compatible|lmstudio|ollama|openai|anthropic)",
       "openai-compatible",
     )
     .option("--base-url <url>", "endpoint base URL")

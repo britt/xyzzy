@@ -1,10 +1,12 @@
 import { Action } from "../world/actions.js";
 import type { Adventure, GameState, Room } from "../world/schema.js";
 import type { NarratorContext, NarratorModel } from "../llm/NarratorModel.js";
+import type { Detector } from "../llm/Detector.js";
+import { buildDetectionContext } from "../llm/detection.js";
 import { buildDigest, isBeatAdvanced } from "./digest.js";
 import { reduceAll } from "./reducer.js";
 import { appendMessage, windowTranscript } from "./transcript.js";
-import { log } from "../util/log.js";
+import { describeError, log } from "../util/log.js";
 
 /**
  * Resolve a room/item/character reference to its canonical id. Models routinely
@@ -78,6 +80,39 @@ export function canonicalizeAction(
 }
 
 /**
+ * Validate raw tool-call args, canonicalize entity refs, and drop moves to
+ * rooms not defined in the adventure. `exclude` skips action types owned by
+ * another path (detection owns moveTo/advanceBeat during narration).
+ */
+export function processActions(
+  adventure: Adventure,
+  state: GameState,
+  raw: unknown[],
+  exclude: ReadonlyArray<Action["type"]> = [],
+): Action[] {
+  const rooms = adventure.entities?.rooms ?? [];
+  const roomIds = new Set(rooms.map((r) => r.id));
+  const restrictRooms = rooms.length > 0;
+
+  return raw
+    .map((a) => Action.safeParse(a))
+    .flatMap((r) => (r.success ? [r.data] : []))
+    .filter((a) => !exclude.includes(a.type))
+    .map((a) => canonicalizeAction(adventure, state, a))
+    .filter((action) => {
+      const target =
+        action.type === "moveTo" || action.type === "moveCharacter"
+          ? action.room
+          : null;
+      if (target !== null && restrictRooms && !roomIds.has(target)) {
+        log.warn(`rejected move to undefined room "${target}"`, { action });
+        return false;
+      }
+      return true;
+    });
+}
+
+/**
  * Expand any `advanceBeat` into the beat's declared `effects` followed by the
  * advanceBeat itself, so a beat's state changes apply atomically alongside its
  * flag flip (see docs/data-model.md § StoryBeat). Effects are skipped when the
@@ -106,6 +141,8 @@ export interface TurnResult {
 export interface TurnDeps {
   adventure: Adventure;
   model: NarratorModel;
+  /** optional structured detector for movement + beat triggers (pre-pass) */
+  detector?: Detector;
   /** injectable clock for deterministic timestamps in tests */
   clock?: () => string;
   /** number of recent transcript messages to send to the model */
@@ -170,16 +207,14 @@ export function buildSystemPrompt(adventure: Adventure): string {
     "player's actions vividly and in the second person, staying consistent with",
     "the world facts given in the state digest. Voice any characters in scene.",
     "",
-    "Mutate game state ONLY through the provided tools (move, take/drop items,",
-    "set flags, update characters, advance beats). Do not invent state changes",
-    "in prose without also emitting the matching tool call. Keep narration to a",
-    "few sentences.",
+    "Mutate game state ONLY through the provided tools (take/drop items, set",
+    "flags, update characters). Do not invent state changes in prose without",
+    "also emitting the matching tool call. Keep narration to a few sentences.",
     "",
-    "MOVEMENT: When the player goes somewhere (e.g. \"go north\", \"enter the",
-    "cave\", \"head back\"), you MUST emit a moveTo tool call — pass the exit",
-    "direction (e.g. \"north\") or the destination room. Narrating movement in",
-    "prose without a moveTo call leaves the player in the same room, which will",
-    "contradict the state digest on the next turn.",
+    "MOVEMENT: Player movement and scene transitions are resolved automatically",
+    "by the game before you narrate — the state digest already reflects the",
+    "player's current room. Just narrate the scene as given; do not emit any",
+    "tool call to move the player.",
     "",
     "EXITS: Do NOT list the room's exits yourself. After your narration the game",
     "automatically appends the complete, authoritative list of exits and their",
@@ -210,10 +245,37 @@ export async function runTurn(
   const now = deps.clock ? deps.clock() : new Date().toISOString();
   const window = deps.transcriptWindow ?? DEFAULT_TRANSCRIPT_WINDOW;
 
+  // --- Detection pre-pass: decide movement + beats deterministically before
+  // narration, apply them, and narrate against the resulting `midState`. On any
+  // detector failure we degrade to no detection and continue (`midState` = state).
+  let midState = state;
+  if (deps.detector) {
+    try {
+      const detection = await deps.detector.detect(
+        buildDetectionContext(adventure, state, input),
+      );
+      const detected: unknown[] = [];
+      if (detection.move) detected.push({ type: "moveTo", room: detection.move });
+      for (const id of detection.advancedBeats) {
+        detected.push({ type: "advanceBeat", beatId: id });
+      }
+      const detectedActions = processActions(adventure, state, detected);
+      midState = reduceAll(
+        state,
+        expandBeatEffects(adventure, state, detectedActions),
+      );
+    } catch (err) {
+      log.warn(
+        "detection failed; continuing without it",
+        describeError(err),
+      );
+    }
+  }
+
   const context: NarratorContext = {
     systemPrompt: buildSystemPrompt(adventure),
-    digest: buildDigest(adventure, state),
-    transcript: windowTranscript(state.transcript, window),
+    digest: buildDigest(adventure, midState),
+    transcript: windowTranscript(midState.transcript, window),
     input,
   };
 
@@ -224,36 +286,24 @@ export async function runTurn(
     if (result.narration.trim() === "") throw new EmptyNarrationError();
   }
 
-  // Validate tool-call args; drop anything malformed before the reducer, then
-  // canonicalize entity refs (a model may pass a room/item/character name in
-  // place of its id).
-  const rooms = adventure.entities?.rooms ?? [];
-  const roomIds = new Set(rooms.map((r) => r.id));
-  // Only constrain movement when the world actually defines rooms; a bare-
-  // premise adventure improvises its geography and has nothing to check against.
-  const restrictRooms = rooms.length > 0;
+  // When a detector is configured it owns moveTo/advanceBeat, so drop any the
+  // narration model emits; without a detector the narration model still owns
+  // them (legacy behavior). This gates on the detector's *presence*, not on the
+  // detection succeeding: if detect() failed above, movement is intentionally
+  // forfeited for this turn rather than handed back to the unreliable narration
+  // path this feature exists to replace. Process the rest against `midState`.
+  const excluded: ReadonlyArray<Action["type"]> = deps.detector
+    ? ["moveTo", "advanceBeat"]
+    : [];
+  const actions = processActions(adventure, midState, result.actions, excluded);
 
-  const actions = result.actions
-    .map((a) => Action.safeParse(a))
-    .filter((r) => r.success)
-    .map((r) => canonicalizeAction(adventure, state, r.data))
-    .filter((action) => {
-      // The model may only move to rooms defined in the game file.
-      const target =
-        action.type === "moveTo" || action.type === "moveCharacter"
-          ? action.room
-          : null;
-      if (target !== null && restrictRooms && !roomIds.has(target)) {
-        log.warn(`rejected move to undefined room "${target}"`, { action });
-        return false;
-      }
-      return true;
-    });
-
-  const nextTurn = state.turn + 1;
+  const nextTurn = midState.turn + 1;
   // Expand each advanced beat into its authored effects so they apply
   // atomically with the beat flag (idempotent: skipped if already advanced).
-  const reduced = reduceAll(state, expandBeatEffects(adventure, state, actions));
+  const reduced = reduceAll(
+    midState,
+    expandBeatEffects(adventure, midState, actions),
+  );
 
   // The engine owns the exits line. Strip any "Exits: …" the model copied from
   // the digest (often truncated and with internal ids), then append the

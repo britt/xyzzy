@@ -3,6 +3,7 @@ import { Box, Static, Text, useApp } from "ink";
 import Spinner from "ink-spinner";
 import type { Adventure, GameState } from "../world/schema.js";
 import type { NarratorModel } from "../llm/NarratorModel.js";
+import type { Detector } from "../llm/Detector.js";
 import type { ProviderConfig } from "../config/schema.js";
 import { runTurn } from "../engine/turnLoop.js";
 import { loadGame, saveGame } from "../engine/save.js";
@@ -16,6 +17,12 @@ export interface AppProps {
   provider: ProviderConfig;
   /** builds the model from a provider; may throw if the provider is unbuildable */
   makeModel: (config: ProviderConfig) => NarratorModel;
+  /**
+   * builds the structured detector from a provider (may throw). Optional: when
+   * omitted, turns run without a detection pre-pass (legacy narration-owned
+   * movement).
+   */
+  makeDetector?: (config: ProviderConfig) => Detector;
   /** lists model ids offered by the provider endpoint (for /model list) */
   listModels: (config: ProviderConfig) => Promise<string[]>;
   /** named providers from global config (for /provider list|use) */
@@ -39,6 +46,29 @@ function buildModel(
     return { model: make(config), error: null };
   } catch (err) {
     return { model: null, error: err instanceof Error ? err.message : String(err) };
+  }
+}
+
+/**
+ * Build the detector without throwing, mirroring {@link buildModel}. The
+ * detector is optional (no `makeDetector` → undefined) and best-effort: a build
+ * failure leaves it undefined so `runTurn` degrades to legacy narration-owned
+ * movement rather than crashing the TUI. Failures are logged, not surfaced —
+ * detection is an internal refinement, not a user-facing capability like the
+ * model.
+ */
+function buildDetector(
+  make: ((config: ProviderConfig) => Detector) | undefined,
+  config: ProviderConfig,
+): Detector | undefined {
+  if (!make) return undefined;
+  try {
+    return make(config);
+  } catch (err) {
+    log.warn("detector could not be initialized; running without detection", {
+      err: err instanceof Error ? err.message : String(err),
+    });
+    return undefined;
   }
 }
 
@@ -83,6 +113,7 @@ export function App({
   initialState,
   provider: initialProvider,
   makeModel,
+  makeDetector,
   listModels,
   providers,
   adventureDir,
@@ -95,6 +126,11 @@ export function App({
     const built = buildModel(makeModel, initialProvider);
     return { model: built.model, modelError: built.error };
   });
+  // Built lazily beside the model (same error-tolerance): an unbuildable
+  // detector is undefined, and runTurn degrades to legacy movement.
+  const [detector, setDetector] = useState(() =>
+    buildDetector(makeDetector, initialProvider),
+  );
   const [lines, setLines] = useState<Line[]>(() => {
     const room = adventure.entities?.rooms?.find(
       (r) => r.id === initialState.location,
@@ -123,6 +159,7 @@ export function App({
     const built = buildModel(makeModel, next);
     setProvider(next);
     setModelState({ model: built.model, modelError: built.error });
+    setDetector(buildDetector(makeDetector, next));
     push(
       "system",
       built.error
@@ -290,7 +327,7 @@ export function App({
     push("player", `> ${value}`);
     setBusy(true);
     try {
-      const result = await runTurn({ adventure, model }, state, value);
+      const result = await runTurn({ adventure, model, detector }, state, value);
       setState(result.state);
       push("narrator", result.narration);
       await saveGame(adventureDir, saveSlot, result.state);
