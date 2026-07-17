@@ -48,7 +48,7 @@ afterEach(() => {
 });
 
 describe("createDetector wire format", () => {
-  it("requests JSON via response_format, not an object tool_choice", async () => {
+  it("requests a json_schema response_format, not tool_choice or json_object", async () => {
     const fetchMock = vi.fn(
       async (_url: string | URL, _init?: RequestInit) =>
         chatCompletion({ move: "down", advancedBeats: [] }),
@@ -58,11 +58,17 @@ describe("createDetector wire format", () => {
     const detection = await createDetector(config).detect(ctx);
     expect(detection).toEqual({ move: "down", advancedBeats: [] });
 
-    // Inspect what actually went over the wire.
+    // Inspect what actually went over the wire. LM Studio rejects BOTH an
+    // object tool_choice AND a bare {type:"json_object"} — it requires
+    // response_format.type === "json_schema" with the schema attached.
     const init = fetchMock.mock.calls[0]![1]!;
     const body = JSON.parse(init.body as string);
-    expect(body.response_format).toBeDefined();
-    // LM Studio only accepts string tool_choice; an object one is the bug.
     expect(body.tool_choice).toBeUndefined();
+    expect(body.response_format?.type).toBe("json_schema");
+    expect(body.response_format?.json_schema?.schema).toBeDefined();
+    // The schema must actually constrain the move to the real exits.
+    expect(body.response_format.json_schema.schema.properties.move.enum).toEqual(
+      ["none", "down"],
+    );
   });
 });

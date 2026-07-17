@@ -92,8 +92,19 @@ export async function listModels(config: ProviderConfig): Promise<string[]> {
     .sort();
 }
 
-/** Resolve a {@link ProviderConfig} to an AI SDK {@link LanguageModel}. */
-function createLanguageModel(config: ProviderConfig): LanguageModel {
+/**
+ * Resolve a {@link ProviderConfig} to an AI SDK {@link LanguageModel}.
+ *
+ * `structuredOutputs` opts the model into `response_format: {type:"json_schema"}`
+ * for object generation. Local servers (LM Studio) reject both the default
+ * object `tool_choice` and a bare `{type:"json_object"}`, accepting only
+ * `json_schema` — so detection sets this; narration (plain tool-calling) does
+ * not need it. See xyzzy.log.
+ */
+function createLanguageModel(
+  config: ProviderConfig,
+  opts: { structuredOutputs?: boolean } = {},
+): LanguageModel {
   switch (config.kind) {
     case "openai-compatible":
     case "ollama": {
@@ -105,7 +116,9 @@ function createLanguageModel(config: ProviderConfig): LanguageModel {
         baseURL: resolveBaseURL(config),
         apiKey: apiKey ?? "not-needed",
       });
-      return provider(config.model);
+      return provider(config.model, undefined, {
+        supportsStructuredOutputs: opts.structuredOutputs ?? false,
+      });
     }
     case "openai":
     case "anthropic":
@@ -186,7 +199,7 @@ const DETECT_SYSTEM =
  * current exits and active beats, bounded by a timeout.
  */
 export function createDetector(config: ProviderConfig): Detector {
-  const languageModel = createLanguageModel(config);
+  const languageModel = createLanguageModel(config, { structuredOutputs: true });
   return {
     async detect(ctx): Promise<Detection> {
       const schema = buildDetectionSchema(ctx.exits, ctx.activeBeats);
