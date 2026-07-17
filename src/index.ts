@@ -8,3 +8,4 @@ export * from "./engine/index.js";
 export * from "./llm/index.js";
 export * from "./config/index.js";
 export { NotImplementedError, notImplemented } from "./util/notImplemented.js";
+export { log, logPath, logDir, describeError, userMessage } from "./util/log.js";

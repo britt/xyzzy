@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import { Command } from "commander";
+import { log } from "../util/log.js";
 import { play } from "./commands/play.js";
 import { newAdventure } from "./commands/new.js";
 import { validate } from "./commands/validate.js";
@@ -92,6 +93,7 @@ async function main(): Promise<void> {
 // Only auto-run when invoked as the CLI, not when imported in tests.
 if (import.meta.url === `file://${process.argv[1]}`) {
   main().catch((err) => {
+    log.error("command failed", err);
     console.error(err instanceof Error ? err.message : err);
     process.exitCode = 1;
   });

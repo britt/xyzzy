@@ -7,6 +7,7 @@ import type { ProviderConfig } from "../config/schema.js";
 import { runTurn } from "../engine/turnLoop.js";
 import { loadGame, saveGame } from "../engine/save.js";
 import { PromptInput } from "./PromptInput.js";
+import { log, logPath, userMessage } from "../util/log.js";
 
 export interface AppProps {
   adventure: Adventure;
@@ -59,6 +60,7 @@ const HELP = [
   "/provider use <n>   switch to a configured provider",
   "/provider url <u>   point the provider at a different endpoint",
   "/state              dump the current game state",
+  "/log                show the log file path",
   "/help               show this help",
   "/quit               exit",
 ].join("\n");
@@ -138,6 +140,9 @@ export function App({
         return true;
       case "/state":
         push("system", JSON.stringify(state, null, 2));
+        return true;
+      case "/log":
+        push("system", `Log file: ${logPath()}`);
         return true;
       case "/model": {
         if (!arg) {
@@ -248,7 +253,8 @@ export function App({
         const handled = await handleMeta(command ?? "", rest.join(" "));
         if (!handled) push("system", `Unknown command: ${command}`);
       } catch (err) {
-        setError(err instanceof Error ? err.message : String(err));
+        log.error(`meta command failed: ${value}`, err);
+        setError(userMessage(err));
       }
       return;
     }
@@ -270,8 +276,10 @@ export function App({
       push("narrator", result.narration);
       await saveGame(adventureDir, saveSlot, result.state);
     } catch (err) {
-      // Turn rolled back: state is unchanged, surface a non-fatal error line.
-      setError(err instanceof Error ? err.message : String(err));
+      // Turn rolled back: state is unchanged. Log full provider detail
+      // (statusCode, responseBody, cause) to disk; show a concise line here.
+      log.error(`turn failed: ${value}`, err);
+      setError(`${userMessage(err)} · details in ${logPath()}`);
     } finally {
       setBusy(false);
     }

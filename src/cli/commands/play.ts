@@ -7,6 +7,7 @@ import { loadGame, saveExists } from "../../engine/save.js";
 import { resolveProvider } from "../../config/resolve.js";
 import { readGlobalConfig } from "../../config/store.js";
 import { createModel, listModels } from "../../llm/registry.js";
+import { log } from "../../util/log.js";
 import { dirname } from "node:path";
 
 export interface PlayOptions {
@@ -35,6 +36,12 @@ export async function play(path: string, opts: PlayOptions): Promise<void> {
     opts.save && saveExists(adventureDir, slot)
       ? await loadGame(adventureDir, slot)
       : newGameState(adventure, new Date().toISOString());
+
+  log.info("play started", {
+    adventure: adventure.meta.id,
+    provider: { kind: provider.kind, baseURL: provider.baseURL, model: provider.model },
+    slot,
+  });
 
   const { waitUntilExit } = render(
     createElement(App, {

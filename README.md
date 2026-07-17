@@ -85,12 +85,30 @@ bottom. Type commands in plain language. In-game meta commands:
 | -------------- | ---------------------------------------- |
 | `/save [slot]` | Save the game (defaults to autosave slot).|
 | `/load [slot]` | Load a saved game.                       |
+| `/model`       | Show or switch the model (`/model list`, `/model <id>`). |
+| `/provider`    | Show or switch the provider (`/provider list\|use\|url`). |
 | `/state`       | Dump the current game state (debugging). |
+| `/log`         | Show the log file path.                  |
 | `/help`        | Show meta commands.                      |
 | `/quit`        | Exit.                                    |
 
 Options: `--save <slot>` to resume a specific save, `--provider <name>` to
 choose an LLM provider for the session.
+
+### Logs & troubleshooting
+
+The terminal UI can't print diagnostics without corrupting the screen, so
+errors and lifecycle events are written to a log file instead (as JSON lines):
+
+```
+$XDG_STATE_HOME/xyzzy/xyzzy.log   # default: ~/.local/state/xyzzy/xyzzy.log
+```
+
+Run `/log` in-game to see the exact path. Provider failures record the full
+detail — HTTP status, request URL, and the raw response body — so a generic
+error like `Invalid JSON response` becomes diagnosable (e.g. the endpoint
+returned HTML because the base URL is missing `/v1`, or a model that doesn't
+support tool-calls). Set `XYZZY_LOG=0` to disable logging.
 
 ### Validate
 
