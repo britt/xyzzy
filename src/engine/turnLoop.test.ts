@@ -39,20 +39,47 @@ describe("buildSystemPrompt", () => {
     expect(prompt).toContain("direction");
     expect(prompt).toContain(adventure.premise.toLowerCase());
   });
+
+  it("tells the model to emit a moveTo tool call for player movement", () => {
+    const prompt = buildSystemPrompt(adventure).toLowerCase();
+    expect(prompt).toContain("moveto");
+  });
 });
 
 describe("canonicalizeAction", () => {
+  // `adventure` has start (exit north -> hall) and hall (no exits).
+  const atStart = newGameState(adventure, "c"); // location: "start"
+
   it("resolves a room name to its id, leaving ids and unknowns untouched", () => {
-    expect(canonicalizeAction(adventure, { type: "moveTo", room: "Hall" })).toEqual(
-      { type: "moveTo", room: "hall" },
-    );
-    expect(canonicalizeAction(adventure, { type: "moveTo", room: "hall" })).toEqual(
-      { type: "moveTo", room: "hall" },
-    );
+    expect(
+      canonicalizeAction(adventure, atStart, { type: "moveTo", room: "Hall" }),
+    ).toEqual({ type: "moveTo", room: "hall" });
+    expect(
+      canonicalizeAction(adventure, atStart, { type: "moveTo", room: "hall" }),
+    ).toEqual({ type: "moveTo", room: "hall" });
     // improvised room the model invented — pass through unchanged
     expect(
-      canonicalizeAction(adventure, { type: "moveTo", room: "attic" }),
+      canonicalizeAction(adventure, atStart, { type: "moveTo", room: "attic" }),
     ).toEqual({ type: "moveTo", room: "attic" });
+  });
+
+  it("resolves an exit direction to the target room id", () => {
+    expect(
+      canonicalizeAction(adventure, atStart, { type: "moveTo", room: "north" }),
+    ).toEqual({ type: "moveTo", room: "hall" });
+  });
+
+  it("resolves a direction case-insensitively", () => {
+    expect(
+      canonicalizeAction(adventure, atStart, { type: "moveTo", room: "North" }),
+    ).toEqual({ type: "moveTo", room: "hall" });
+  });
+
+  it("leaves a direction untouched when the current room has no such exit", () => {
+    const atHall = { ...atStart, location: "hall" }; // hall has no exits
+    expect(
+      canonicalizeAction(adventure, atHall, { type: "moveTo", room: "north" }),
+    ).toEqual({ type: "moveTo", room: "north" });
   });
 });
 
@@ -119,6 +146,19 @@ describe("runTurn", () => {
       "go",
     );
     expect(state.location).toBe("hall"); // the id, not "Hall"
+  });
+
+  it("moves when the model passes a direction as the room (the go-north bug)", async () => {
+    // Model emits the direction verbatim instead of resolving it to a room id.
+    const model = new FakeNarratorModel([
+      { narration: "You head north.", actions: [{ type: "moveTo", room: "north" }] },
+    ]);
+    const { state } = await runTurn(
+      deps(model),
+      newGameState(adventure, "c"), // location: "start", exit north -> hall
+      "go north",
+    );
+    expect(state.location).toBe("hall"); // resolved via the exit, not dropped
   });
 
   it("rejects a move to a room not defined in the adventure", async () => {
