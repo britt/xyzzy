@@ -1,4 +1,6 @@
 import { z } from "zod";
+import { Value } from "./values.js";
+import { Action } from "./actions.js";
 
 /**
  * The `world/` schemas are the single source of truth for every structure xyzzy
@@ -6,9 +8,8 @@ import { z } from "zod";
  * derive their types from here. See docs/data-model.md.
  */
 
-/** Open scalar value used throughout author-defined `state`/`flags` bags. */
-export const Value = z.union([z.string(), z.number(), z.boolean()]);
-export type Value = z.infer<typeof Value>;
+/** Re-exported so existing `world/schema` importers of `Value` keep working. */
+export { Value };
 
 const ValueBag = z.record(z.string(), Value);
 
@@ -72,6 +73,12 @@ export const StoryBeat = z.object({
   description: z.string().min(1),
   /** optional trigger notes surfaced to the model */
   trigger: z.string().optional(),
+  /**
+   * Declarative state changes applied atomically when the beat advances, so a
+   * beat's consequences live beside it and can't be half-applied. Each entry is
+   * a validated {@link Action} — the same mutation vocabulary the model uses.
+   */
+  effects: z.array(Action).optional(),
 });
 export type StoryBeat = z.infer<typeof StoryBeat>;
 

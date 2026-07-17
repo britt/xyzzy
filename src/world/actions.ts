@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { Value } from "./schema.js";
+import { Value } from "./values.js";
 
 /**
  * The fixed set of typed mutations the model may request. Each is exposed to

@@ -1,7 +1,7 @@
 import { Action } from "../world/actions.js";
 import type { Adventure, GameState } from "../world/schema.js";
 import type { NarratorContext, NarratorModel } from "../llm/NarratorModel.js";
-import { buildDigest } from "./digest.js";
+import { buildDigest, isBeatAdvanced } from "./digest.js";
 import { reduceAll } from "./reducer.js";
 import { appendMessage, windowTranscript } from "./transcript.js";
 import { log } from "../util/log.js";
@@ -52,6 +52,27 @@ export function canonicalizeAction(
     default:
       return action;
   }
+}
+
+/**
+ * Expand any `advanceBeat` into the beat's declared `effects` followed by the
+ * advanceBeat itself, so a beat's state changes apply atomically alongside its
+ * flag flip (see docs/data-model.md § StoryBeat). Effects are skipped when the
+ * beat is already advanced, so re-advancing is idempotent and never re-runs
+ * them. Non-beat actions, unknown beats, and effect-less beats pass through
+ * unchanged. The model's own mutations still apply — effects are additive.
+ */
+export function expandBeatEffects(
+  adventure: Adventure,
+  state: GameState,
+  actions: Action[],
+): Action[] {
+  return actions.flatMap((action) => {
+    if (action.type !== "advanceBeat") return [action];
+    if (isBeatAdvanced(state, action.beatId)) return [action];
+    const beat = adventure.beats?.find((b) => b.id === action.beatId);
+    return [...(beat?.effects ?? []), action];
+  });
 }
 
 export interface TurnResult {
@@ -201,7 +222,9 @@ export async function runTurn(
     });
 
   const nextTurn = state.turn + 1;
-  const reduced = reduceAll(state, actions);
+  // Expand each advanced beat into its authored effects so they apply
+  // atomically with the beat flag (idempotent: skipped if already advanced).
+  const reduced = reduceAll(state, expandBeatEffects(adventure, state, actions));
 
   // The engine owns the exits line. Strip any "Exits: …" the model copied from
   // the digest (often truncated and with internal ids), then append the

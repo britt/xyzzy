@@ -112,14 +112,39 @@ start:
     treasureClaimed: false
 
 beats:
+  # A beat's `trigger` tells the model *when* to advance it; its `effects` are
+  # the state changes the engine applies automatically and atomically when it
+  # does — so a beat's consequences can never be half-applied. Effects use the
+  # same verbs as the model's own tool calls (setFlag, setGameState,
+  # setCharacterState, addItem, …) and are additive: the model may still make
+  # its own changes in the same turn.
   - id: find-light
     description: The player lights the brass lantern and can see in the dark.
-    trigger: Player finds a way to spark the lantern; set flags.lanternLit true.
+    trigger: The player finds a way to spark the lantern.
+    effects:
+      - type: setFlag
+        key: lanternLit
+        value: true
   - id: win-over-grimble
     description: The player earns Grimble's trust enough to pass the lake.
     trigger: >
-      Grimble's trust rises (a gift such as the coin or gemstone, a riddle, or
-      kindness). Raise character state trust and flip bribed/mood as fitting.
+      Grimble's trust rises far enough to let the player pass — a gift such as
+      the coin or gemstone, a riddle answered, or genuine kindness. Nudge his
+      trust upward yourself as the scene warrants; advancing the beat locks in
+      the rest.
+    effects:
+      - type: setCharacterState
+        charId: grimble
+        key: bribed
+        value: true
+      - type: setCharacterState
+        charId: grimble
+        key: mood
+        value: trusting
   - id: claim-the-gem
     description: The player takes the perfect gemstone from the alcove.
-    trigger: Player picks up the gemstone; set state.treasureClaimed true.
+    trigger: The player picks up the gemstone.
+    effects:
+      - type: setGameState
+        key: treasureClaimed
+        value: true
