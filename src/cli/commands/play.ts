@@ -6,7 +6,7 @@ import { newGameState } from "../../engine/state.js";
 import { loadGame, saveExists } from "../../engine/save.js";
 import { resolveProvider } from "../../config/resolve.js";
 import { readGlobalConfig } from "../../config/store.js";
-import { createModel, listModels } from "../../llm/registry.js";
+import { createDetector, createModel, listModels } from "../../llm/registry.js";
 import { log } from "../../util/log.js";
 import { dirname } from "node:path";
 
@@ -51,6 +51,7 @@ export async function play(path: string, opts: PlayOptions): Promise<void> {
       // Built lazily inside the TUI so an unbuildable/unreachable LLM never
       // blocks startup — slash commands (incl. /model, /quit) always work.
       makeModel: createModel,
+      makeDetector: createDetector,
       listModels,
       providers,
       adventureDir,

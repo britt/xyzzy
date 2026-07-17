@@ -6,6 +6,7 @@ import { render } from "ink-testing-library";
 import { App } from "./App.js";
 import { newGameState } from "../engine/state.js";
 import { FakeNarratorModel, type NarratorModel } from "../llm/NarratorModel.js";
+import { FakeDetector, type Detector } from "../llm/Detector.js";
 import type { Adventure } from "../world/schema.js";
 import type { ProviderConfig } from "../config/schema.js";
 
@@ -45,6 +46,7 @@ function mount(
   makeModel: (config: ProviderConfig) => NarratorModel = () => model,
   listModels: (config: ProviderConfig) => Promise<string[]> = async () => [],
   providers: Record<string, ProviderConfig> = {},
+  makeDetector?: (config: ProviderConfig) => Detector,
 ) {
   return render(
     <App
@@ -52,6 +54,7 @@ function mount(
       initialState={newGameState(adventure, "now")}
       provider={provider}
       makeModel={makeModel}
+      makeDetector={makeDetector}
       listModels={listModels}
       providers={providers}
       adventureDir={mkdtempSync(join(tmpdir(), "xyzzy-tui-"))}
@@ -78,6 +81,53 @@ describe("App", () => {
 
     await expect.poll(() => lastFrame()).toContain("You stride north.");
     expect(lastFrame()).toContain("turn 1");
+    unmount();
+  });
+
+  it("uses the injected detector to resolve movement for a turn", async () => {
+    // The narration model emits no movement; detection owns the move north.
+    const model = new FakeNarratorModel([
+      { narration: "You walk on.", actions: [] },
+    ]);
+    const makeDetector = () =>
+      new FakeDetector([{ move: "north", advancedBeats: [] }]);
+    const { lastFrame, stdin, unmount } = mount(
+      model,
+      () => model,
+      undefined,
+      undefined,
+      makeDetector,
+    );
+
+    await type(stdin, "go north");
+
+    // The detected move landed us in the Hall; the status bar and the
+    // authoritative exits footer reflect the new room.
+    await expect.poll(() => lastFrame()).toContain("Cave · Hall · turn 1");
+    unmount();
+  });
+
+  it("degrades silently when the detector cannot be built", async () => {
+    // A detector that throws at build time must not crash the TUI; the turn
+    // still narrates (movement just falls back to the narration model).
+    const model = new FakeNarratorModel([
+      { narration: "You stride north.", actions: [{ type: "moveTo", room: "hall" }] },
+    ]);
+    const makeDetector = () => {
+      throw new Error("no detector for this provider");
+    };
+    const { lastFrame, stdin, unmount } = mount(
+      model,
+      () => model,
+      undefined,
+      undefined,
+      makeDetector,
+    );
+
+    await type(stdin, "go north");
+
+    await expect.poll(() => lastFrame()).toContain("You stride north.");
+    expect(lastFrame()).toContain("turn 1"); // no crash, turn completed
     unmount();
   });
 
