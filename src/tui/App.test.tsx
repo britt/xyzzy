@@ -21,13 +21,17 @@ const adventure: Adventure = {
   },
 };
 
-const tick = () => new Promise((r) => setTimeout(r, 10));
+const tick = () => new Promise((r) => setTimeout(r, 15));
 
-/** Emulate a terminal: characters arrive, then Enter as its own event. */
+/** Emulate a terminal: characters arrive, then Enter as its own event. The
+ * leading tick lets a freshly (re)mounted input subscribe before we type — the
+ * input remounts around each turn (spinner ↔ input). */
 async function type(stdin: { write: (s: string) => void }, value: string) {
+  await tick();
   stdin.write(value);
   await tick();
   stdin.write("\r");
+  await tick();
 }
 
 const provider: ProviderConfig = {
@@ -84,6 +88,39 @@ describe("App", () => {
 
     await expect.poll(() => lastFrame()).toContain("/quit");
     unmount();
+  });
+
+  it("/state elides the transcript", async () => {
+    const model = new FakeNarratorModel([
+      { narration: "You look around.", actions: [] },
+    ]);
+    const { lastFrame, stdin, unmount } = mount(model);
+    await type(stdin, "look"); // one turn → transcript has messages
+    await expect.poll(() => lastFrame()).toContain("You look around.");
+
+    await type(stdin, "/state");
+    await expect.poll(() => lastFrame()).toContain('"transcript": "[ ... ]"');
+    unmount();
+  });
+
+  it("/transcript prints the conversation, and reports when empty", async () => {
+    const empty = mount(new FakeNarratorModel());
+    await type(empty.stdin, "/transcript");
+    await expect.poll(() => empty.lastFrame()).toContain("transcript is empty");
+    empty.unmount();
+
+    const model = new FakeNarratorModel([
+      { narration: "A cold hush.", actions: [] },
+    ]);
+    const played = mount(model);
+    await type(played.stdin, "listen");
+    await expect.poll(() => played.lastFrame()).toContain("A cold hush.");
+    await type(played.stdin, "/transcript");
+    await expect
+      .poll(() => played.lastFrame())
+      .toContain("[1] narrator: A cold hush.");
+    expect(played.lastFrame()).toContain("[1] player: listen");
+    played.unmount();
   });
 
   it("/model with no argument shows the current LLM", async () => {

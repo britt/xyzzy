@@ -59,7 +59,8 @@ const HELP = [
   "/provider list      list configured providers",
   "/provider use <n>   switch to a configured provider",
   "/provider url <u>   point the provider at a different endpoint",
-  "/state              dump the current game state",
+  "/state              dump the current game state (transcript elided)",
+  "/transcript         print the full conversation transcript",
   "/log                show the log file path",
   "/help               show this help",
   "/quit               exit",
@@ -139,7 +140,25 @@ export function App({
         push("system", HELP);
         return true;
       case "/state":
-        push("system", JSON.stringify(state, null, 2));
+        // Elide the (potentially huge) transcript; use /transcript to see it.
+        push(
+          "system",
+          JSON.stringify(
+            state,
+            (key, value) => (key === "transcript" ? "[ ... ]" : value),
+            2,
+          ),
+        );
+        return true;
+      case "/transcript":
+        push(
+          "system",
+          state.transcript.length === 0
+            ? "(transcript is empty)"
+            : state.transcript
+                .map((m) => `[${m.turn}] ${m.role}: ${m.text}`)
+                .join("\n"),
+        );
         return true;
       case "/log":
         push("system", `Log file: ${logPath()}`);
