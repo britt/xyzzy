@@ -99,6 +99,43 @@ describe("runTurn", () => {
     expect(narration).toContain("west to West Room");
   });
 
+  it("replaces a model's truncated/echoed exits line with the full one", async () => {
+    const hub: Adventure = {
+      meta: { id: "h", title: "H", version: "1" },
+      premise: "p",
+      start: { room: "hub" },
+      entities: {
+        rooms: [
+          {
+            id: "hub",
+            name: "Hub",
+            description: "d",
+            exits: { north: "n", east: "e", west: "w" },
+          },
+          { id: "n", name: "North Room", description: "d" },
+          { id: "e", name: "East Room", description: "d" },
+          { id: "w", name: "West Room", description: "d" },
+        ],
+      },
+    };
+    // Model copies the digest line but truncates it to one exit with an id.
+    const model = new FakeNarratorModel([
+      { narration: "You stand in a hub. Exits: north to North Room [n].", actions: [] },
+    ]);
+    const { narration } = await runTurn(
+      { adventure: hub, model, clock: () => "t" },
+      newGameState(hub, "c"),
+      "look",
+    );
+
+    expect(narration).not.toContain("[n]"); // internal id gone
+    expect(narration.match(/Exits:/g)).toHaveLength(1); // exactly one exits line
+    expect(narration).toContain("north to North Room");
+    expect(narration).toContain("east to East Room");
+    expect(narration).toContain("west to West Room");
+    expect(narration).toContain("You stand in a hub."); // prose preserved
+  });
+
   it("reports no exits for a dead-end room", async () => {
     // adventure's "hall" has no exits.
     const model = new FakeNarratorModel([

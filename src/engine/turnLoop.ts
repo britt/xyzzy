@@ -54,6 +54,16 @@ export function exitsFooter(
   return `Exits: ${parts.join(", ")}.`;
 }
 
+/**
+ * Remove any "Exit:"/"Exits: …" run the model emitted (often copied verbatim
+ * from the digest, truncated and with internal ids like `[entrance]`). The
+ * engine appends its own authoritative exits line, so the model's is redundant
+ * and usually wrong.
+ */
+export function stripProseExits(text: string): string {
+  return text.replace(/\s*Exits?:[^\n]*/gi, "").trim();
+}
+
 /** System prompt: premise + tone + the rules that steer tool use. */
 export function buildSystemPrompt(adventure: Adventure): string {
   return [
@@ -118,12 +128,14 @@ export async function runTurn(
   const nextTurn = state.turn + 1;
   const reduced = reduceAll(state, actions);
 
-  // Deterministically append the complete list of exits so the player always
-  // sees every way out, regardless of whether the model listed them.
+  // The engine owns the exits line. Strip any "Exits: …" the model copied from
+  // the digest (often truncated and with internal ids), then append the
+  // authoritative, complete list so the player always sees every way out.
+  const prose = stripProseExits(result.narration);
   const footer = exitsFooter(adventure, reduced);
   const narration = footer
-    ? `${result.narration.trimEnd()}\n\n${footer}`
-    : result.narration;
+    ? `${prose.trimEnd()}\n\n${footer}`.trim()
+    : prose;
 
   let transcript = appendMessage(reduced.transcript, {
     role: "player",
