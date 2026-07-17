@@ -8,6 +8,7 @@ import { z } from "zod";
 
 export const ProviderKind = z.enum([
   "openai-compatible",
+  "lmstudio",
   "ollama",
   "openai",
   "anthropic",

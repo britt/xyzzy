@@ -107,6 +107,7 @@ function createLanguageModel(
 ): LanguageModel {
   switch (config.kind) {
     case "openai-compatible":
+    case "lmstudio":
     case "ollama": {
       const apiKey = config.apiKeyEnv
         ? process.env[config.apiKeyEnv]
@@ -198,8 +199,21 @@ const DETECT_SYSTEM =
  * `generateObject` call per turn against the per-turn schema built from the
  * current exits and active beats, bounded by a timeout.
  */
+/**
+ * Provider kinds whose servers require `json_schema` structured output (rather
+ * than a bare `json_object`). LM Studio is the concrete case: it rejects both an
+ * object `tool_choice` and `{type:"json_object"}` (see xyzzy.log). Keyed off the
+ * kind the user already picked — never a wire-format setting they must reason
+ * about.
+ */
+const JSON_SCHEMA_KINDS: ReadonlySet<ProviderConfig["kind"]> = new Set([
+  "lmstudio",
+]);
+
 export function createDetector(config: ProviderConfig): Detector {
-  const languageModel = createLanguageModel(config, { structuredOutputs: true });
+  const languageModel = createLanguageModel(config, {
+    structuredOutputs: JSON_SCHEMA_KINDS.has(config.kind),
+  });
   return {
     async detect(ctx): Promise<Detection> {
       const schema = buildDetectionSchema(ctx.exits, ctx.activeBeats);

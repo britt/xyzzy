@@ -5,15 +5,10 @@ import type { DetectionContext } from "./Detector.js";
 
 // This test does NOT mock the `ai` SDK: it drives the real generateObject call
 // through a stubbed fetch so it can inspect the actual request body the provider
-// sends. It guards the wire format — specifically that structured output goes
-// out as a `response_format` (JSON mode), NOT as an object `tool_choice`, which
-// local servers like LM Studio reject with HTTP 400. See xyzzy.log.
-
-const config: ProviderConfig = {
-  kind: "openai-compatible",
-  baseURL: "http://localhost:9/v1",
-  model: "m1",
-};
+// sends. It guards the structured-output wire format per provider kind — the
+// thing that broke against LM Studio (see xyzzy.log): LM Studio rejects both an
+// object `tool_choice` AND a bare `{type:"json_object"}`, accepting only
+// `json_schema`. Generic openai-compatible servers get `json_object`.
 
 const ctx: DetectionContext = {
   input: "go down",
@@ -42,33 +37,47 @@ function chatCompletion(obj: unknown): Response {
   );
 }
 
+/** Run one detect() against a stubbed fetch and return the parsed request body. */
+async function captureRequest(config: ProviderConfig) {
+  const fetchMock = vi.fn(
+    async (_url: string | URL, _init?: RequestInit) =>
+      chatCompletion({ move: "down", advancedBeats: [] }),
+  );
+  vi.stubGlobal("fetch", fetchMock);
+  const detection = await createDetector(config).detect(ctx);
+  const init = fetchMock.mock.calls[0]![1]!;
+  return { detection, body: JSON.parse(init.body as string) };
+}
+
 afterEach(() => {
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
 });
 
 describe("createDetector wire format", () => {
-  it("requests a json_schema response_format, not tool_choice or json_object", async () => {
-    const fetchMock = vi.fn(
-      async (_url: string | URL, _init?: RequestInit) =>
-        chatCompletion({ move: "down", advancedBeats: [] }),
-    );
-    vi.stubGlobal("fetch", fetchMock);
-
-    const detection = await createDetector(config).detect(ctx);
+  it("uses a json_schema response_format for the lmstudio kind", async () => {
+    const { detection, body } = await captureRequest({
+      kind: "lmstudio",
+      baseURL: "http://localhost:9/v1",
+      model: "m1",
+    });
     expect(detection).toEqual({ move: "down", advancedBeats: [] });
-
-    // Inspect what actually went over the wire. LM Studio rejects BOTH an
-    // object tool_choice AND a bare {type:"json_object"} — it requires
-    // response_format.type === "json_schema" with the schema attached.
-    const init = fetchMock.mock.calls[0]![1]!;
-    const body = JSON.parse(init.body as string);
+    // LM Studio accepts only json_schema — never object tool_choice or json_object.
     expect(body.tool_choice).toBeUndefined();
     expect(body.response_format?.type).toBe("json_schema");
     expect(body.response_format?.json_schema?.schema).toBeDefined();
-    // The schema must actually constrain the move to the real exits.
     expect(body.response_format.json_schema.schema.properties.move.enum).toEqual(
       ["none", "down"],
     );
+  });
+
+  it("uses a plain json_object response_format for the generic openai-compatible kind", async () => {
+    const { body } = await captureRequest({
+      kind: "openai-compatible",
+      baseURL: "http://localhost:9/v1",
+      model: "m1",
+    });
+    expect(body.tool_choice).toBeUndefined();
+    expect(body.response_format?.type).toBe("json_object");
   });
 });
