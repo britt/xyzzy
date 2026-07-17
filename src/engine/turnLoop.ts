@@ -1,6 +1,8 @@
 import { Action } from "../world/actions.js";
 import type { Adventure, GameState, Room } from "../world/schema.js";
 import type { NarratorContext, NarratorModel } from "../llm/NarratorModel.js";
+import type { Detector } from "../llm/Detector.js";
+import { buildDetectionContext } from "../llm/detection.js";
 import { buildDigest, isBeatAdvanced } from "./digest.js";
 import { reduceAll } from "./reducer.js";
 import { appendMessage, windowTranscript } from "./transcript.js";
@@ -139,6 +141,8 @@ export interface TurnResult {
 export interface TurnDeps {
   adventure: Adventure;
   model: NarratorModel;
+  /** optional structured detector for movement + beat triggers (pre-pass) */
+  detector?: Detector;
   /** injectable clock for deterministic timestamps in tests */
   clock?: () => string;
   /** number of recent transcript messages to send to the model */
@@ -243,10 +247,34 @@ export async function runTurn(
   const now = deps.clock ? deps.clock() : new Date().toISOString();
   const window = deps.transcriptWindow ?? DEFAULT_TRANSCRIPT_WINDOW;
 
+  // --- Detection pre-pass: decide movement + beats deterministically before
+  // narration, apply them, and narrate against the resulting `midState`. On any
+  // detector failure we degrade to no detection and continue (`midState` = state).
+  let midState = state;
+  if (deps.detector) {
+    try {
+      const detection = await deps.detector.detect(
+        buildDetectionContext(adventure, state, input),
+      );
+      const detected: unknown[] = [];
+      if (detection.move) detected.push({ type: "moveTo", room: detection.move });
+      for (const id of detection.advancedBeats) {
+        detected.push({ type: "advanceBeat", beatId: id });
+      }
+      const detectedActions = processActions(adventure, state, detected);
+      midState = reduceAll(
+        state,
+        expandBeatEffects(adventure, state, detectedActions),
+      );
+    } catch (err) {
+      log.warn("detection failed; continuing without it", { err });
+    }
+  }
+
   const context: NarratorContext = {
     systemPrompt: buildSystemPrompt(adventure),
-    digest: buildDigest(adventure, state),
-    transcript: windowTranscript(state.transcript, window),
+    digest: buildDigest(adventure, midState),
+    transcript: windowTranscript(midState.transcript, window),
     input,
   };
 
@@ -257,12 +285,24 @@ export async function runTurn(
     if (result.narration.trim() === "") throw new EmptyNarrationError();
   }
 
-  const actions = processActions(adventure, state, result.actions);
+  // When a detector is configured it owns moveTo/advanceBeat, so drop any the
+  // narration model emits; without a detector the narration model still owns
+  // them (legacy behavior). This gates on the detector's *presence*, not on the
+  // detection succeeding: if detect() failed above, movement is intentionally
+  // forfeited for this turn rather than handed back to the unreliable narration
+  // path this feature exists to replace. Process the rest against `midState`.
+  const excluded: ReadonlyArray<Action["type"]> = deps.detector
+    ? ["moveTo", "advanceBeat"]
+    : [];
+  const actions = processActions(adventure, midState, result.actions, excluded);
 
-  const nextTurn = state.turn + 1;
+  const nextTurn = midState.turn + 1;
   // Expand each advanced beat into its authored effects so they apply
   // atomically with the beat flag (idempotent: skipped if already advanced).
-  const reduced = reduceAll(state, expandBeatEffects(adventure, state, actions));
+  const reduced = reduceAll(
+    midState,
+    expandBeatEffects(adventure, midState, actions),
+  );
 
   // The engine owns the exits line. Strip any "Exits: …" the model copied from
   // the digest (often truncated and with internal ids), then append the
