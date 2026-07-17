@@ -1,5 +1,11 @@
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
-import { generateText, tool, type CoreMessage, type LanguageModel } from "ai";
+import {
+  generateObject,
+  generateText,
+  tool,
+  type CoreMessage,
+  type LanguageModel,
+} from "ai";
 import type { Action } from "../world/actions.js";
 import type { ProviderConfig } from "../config/schema.js";
 import type { Message } from "../world/schema.js";
@@ -8,6 +14,8 @@ import {
   type NarratorModel,
   type NarratorResult,
 } from "./NarratorModel.js";
+import type { Detection, Detector } from "./Detector.js";
+import { buildDetectionSchema } from "./detection.js";
 import { ACTION_TOOLS, toAction } from "./tools.js";
 
 /** Max tool-loop steps per turn (model may narrate + emit several mutations). */
@@ -142,6 +150,51 @@ export function createModel(config: ProviderConfig): NarratorModel {
       });
 
       return { narration: result.text, actions };
+    },
+  };
+}
+
+/** How long to wait for the detection call before aborting the turn's pre-pass. */
+const DETECT_TIMEOUT_MS = 8000;
+
+const DETECT_SYSTEM =
+  "You extract structured intent from a text-adventure player's command. " +
+  "Given the available exits (with destinations) and the active story beats " +
+  "(with triggers), decide which exit the player is trying to take (or none) " +
+  "and which beats' triggers the command now satisfies. Do not invent exits " +
+  "or beats.";
+
+/**
+ * Resolve a {@link ProviderConfig} to a structured {@link Detector}: one
+ * `generateObject` call per turn against the per-turn schema built from the
+ * current exits and active beats, bounded by a timeout.
+ */
+export function createDetector(config: ProviderConfig): Detector {
+  const languageModel = createLanguageModel(config);
+  return {
+    async detect(ctx): Promise<Detection> {
+      const schema = buildDetectionSchema(ctx.exits, ctx.activeBeats);
+      const prompt = [
+        `Player command: ${ctx.input}`,
+        `Exits: ${
+          ctx.exits.map((e) => `${e.direction} -> ${e.destination}`).join(", ") ||
+          "(none)"
+        }`,
+        `Active beats: ${
+          ctx.activeBeats.map((b) => `${b.id}: ${b.trigger}`).join(" | ") ||
+          "(none)"
+        }`,
+      ].join("\n");
+
+      const { object } = await generateObject({
+        model: languageModel,
+        schema,
+        system: DETECT_SYSTEM,
+        prompt,
+        abortSignal: AbortSignal.timeout(DETECT_TIMEOUT_MS),
+      });
+      // The schema already normalized "none" -> null and defaulted advancedBeats.
+      return object;
     },
   };
 }

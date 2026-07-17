@@ -1,6 +1,12 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { listModels, ProviderError } from "./registry.js";
+import { generateObject } from "ai";
+import { createDetector, listModels, ProviderError } from "./registry.js";
 import type { ProviderConfig } from "../config/schema.js";
+
+vi.mock("ai", async (orig) => ({
+  ...(await orig<typeof import("ai")>()),
+  generateObject: vi.fn(),
+}));
 
 const config: ProviderConfig = {
   kind: "openai-compatible",
@@ -56,5 +62,31 @@ describe("listModels", () => {
       throw new Error("ECONNREFUSED");
     });
     await expect(listModels(config)).rejects.toBeInstanceOf(ProviderError);
+  });
+});
+
+describe("createDetector", () => {
+  it("returns the validated object from a schema + context-built prompt", async () => {
+    // generateObject is heavily overloaded; treat the mock loosely here so the
+    // test can assert on the (schema, prompt) it receives without wire types.
+    const mocked = generateObject as unknown as ReturnType<typeof vi.fn>;
+    mocked.mockResolvedValue({ object: { move: "north", advancedBeats: [] } });
+
+    const detector = createDetector(config);
+    const out = await detector.detect({
+      input: "go north",
+      exits: [{ direction: "north", destination: "Hall" }],
+      activeBeats: [{ id: "reach-hall", trigger: "player reaches the hall" }],
+    });
+
+    expect(out).toEqual({ move: "north", advancedBeats: [] });
+
+    expect(mocked).toHaveBeenCalledTimes(1);
+    const call = mocked.mock.calls[0]![0] as { schema: unknown; prompt: string };
+    expect(call.schema).toBeDefined();
+    const prompt = String(call.prompt);
+    expect(prompt).toContain("go north");
+    expect(prompt).toContain("north -> Hall");
+    expect(prompt).toContain("reach-hall");
   });
 });
