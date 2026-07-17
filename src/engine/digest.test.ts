@@ -39,10 +39,10 @@ describe("buildDigest", () => {
   const state = newGameState(adventure, "now");
   const digest = buildDigest(adventure, state);
 
-  it("shows the current room, description, and exits", () => {
+  it("shows the current room, description, and exits with target names", () => {
     expect(digest).toContain("Great Cavern [cavern]");
     expect(digest).toContain("A vast echoing space.");
-    expect(digest).toContain("north → lake");
+    expect(digest).toContain("north to Lake [lake]");
   });
 
   it("lists items present but not carried", () => {

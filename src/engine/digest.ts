@@ -23,6 +23,7 @@ export function buildDigest(adventure: Adventure, state: GameState): string {
   const items = adventure.entities?.items ?? [];
   const characters = adventure.entities?.characters ?? [];
 
+  const roomsById = new Map(rooms.map((r) => [r.id, r]));
   const lines: string[] = [];
 
   // --- Location ---
@@ -35,8 +36,13 @@ export function buildDigest(adventure: Adventure, state: GameState): string {
     const exits = Object.entries(room.exits ?? {});
     lines.push(
       exits.length
-        ? `Exits: ${exits.map(([d, t]) => `${d} → ${t}`).join(", ")}`
-        : "Exits: (none)",
+        ? `Exits: ${exits
+            .map(([dir, target]) => {
+              const dest = roomsById.get(target);
+              return dest ? `${dir} to ${dest.name} [${target}]` : `${dir} to ${target}`;
+            })
+            .join(", ")}`
+        : "Exits: (none obvious)",
     );
   } else {
     lines.push(`Location: ${state.location} (improvised — not authored)`);

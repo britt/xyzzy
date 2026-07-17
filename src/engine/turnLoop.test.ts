@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { EmptyNarrationError, runTurn, type TurnDeps } from "./turnLoop.js";
+import {
+  buildSystemPrompt,
+  EmptyNarrationError,
+  runTurn,
+  type TurnDeps,
+} from "./turnLoop.js";
 import { newGameState } from "./state.js";
 import { FakeNarratorModel, type NarratorModel } from "../llm/NarratorModel.js";
 import type { Adventure } from "../world/schema.js";
@@ -24,6 +29,15 @@ const adventure: Adventure = {
 function deps(model: NarratorModel): TurnDeps {
   return { adventure, model, clock: () => "2026-07-15T00:00:00.000Z" };
 }
+
+describe("buildSystemPrompt", () => {
+  it("instructs the model to always list exits and their directions", () => {
+    const prompt = buildSystemPrompt(adventure).toLowerCase();
+    expect(prompt).toContain("exit");
+    expect(prompt).toContain("direction");
+    expect(prompt).toContain(adventure.premise.toLowerCase());
+  });
+});
 
 describe("runTurn", () => {
   it("applies validated actions and appends transcript", async () => {

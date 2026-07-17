@@ -41,6 +41,13 @@ export function buildSystemPrompt(adventure: Adventure): string {
     "in prose without also emitting the matching tool call. Keep narration to a",
     "few sentences.",
     "",
+    "EXITS: Whenever you describe a room — on entering it, when the player looks",
+    "around, or when first introducing it — you MUST end the description by",
+    'explicitly listing every available exit with its direction, e.g. "Exits:',
+    'north to the hallway, east to a dark alcove." Take the exits from the state',
+    "digest's Exits line when it lists them; never omit or contradict them. If a",
+    "room genuinely has no exits, say there are no obvious ways out.",
+    "",
     "PREMISE:",
     adventure.premise.trim(),
   ].join("\n");
