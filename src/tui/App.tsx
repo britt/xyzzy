@@ -7,6 +7,7 @@ import type { Detector } from "../llm/Detector.js";
 import type { ProviderConfig } from "../config/schema.js";
 import { runTurn } from "../engine/turnLoop.js";
 import { loadGame, saveGame } from "../engine/save.js";
+import { buildMap } from "../engine/asciiMap.js";
 import { PromptInput } from "./PromptInput.js";
 import { log, logPath, userMessage } from "../util/log.js";
 
@@ -89,6 +90,7 @@ const HELP = [
   "/provider list      list configured providers",
   "/provider use <n>   switch to a configured provider",
   "/provider url <u>   point the provider at a different endpoint",
+  "/map                draw an ASCII map of rooms, connections, and who's where",
   "/state              dump the current game state (transcript elided)",
   "/transcript         print the full conversation transcript",
   "/log                show the log file path",
@@ -175,6 +177,9 @@ export function App({
         return true;
       case "/help":
         push("system", HELP);
+        return true;
+      case "/map":
+        push("system", buildMap(adventure, state));
         return true;
       case "/state":
         // Elide the (potentially huge) transcript; use /transcript to see it.
