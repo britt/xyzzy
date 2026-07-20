@@ -47,7 +47,7 @@ export const ACTION_TOOLS: Record<ActionType, ActionToolDef> = {
     }),
   },
   appendCharacterHistory: {
-    description: "Append a short summary to a character's history.",
+    description: "Append a short summary of actions or events that affected the character. Do not repeat dialogue. Summary should be short, one or two sentences at most.",
     parameters: z.object({ charId: z.string(), summary: z.string() }),
   },
   moveCharacter: {
