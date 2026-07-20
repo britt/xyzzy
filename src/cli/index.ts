@@ -4,7 +4,6 @@ import { log } from "../util/log.js";
 import { play } from "./commands/play.js";
 import { newAdventure } from "./commands/new.js";
 import { validate } from "./commands/validate.js";
-import { map } from "./commands/map.js";
 import {
   configAdd,
   configList,
@@ -48,12 +47,6 @@ export function buildProgram(): Command {
     .action(async (path: string) => {
       process.exitCode = await validate(path);
     });
-
-  program
-    .command("map")
-    .argument("<path>", "adventure directory")
-    .description("compute the room layout and save it to map.yaml in the adventure directory")
-    .action((path: string) => map(path));
 
   const config = program
     .command("config")

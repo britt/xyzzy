@@ -140,14 +140,6 @@ describe("App", () => {
     unmount();
   });
 
-  it("/map draws the rooms, their connection, and the player's position", async () => {
-    const { lastFrame, stdin, unmount } = mount(new FakeNarratorModel());
-    await type(stdin, "/map");
-    await expect.poll(() => lastFrame()).toContain("Start @");
-    expect(lastFrame()).toContain("Hall");
-    unmount();
-  });
-
   it("/state elides the transcript", async () => {
     const model = new FakeNarratorModel([
       { narration: "You look around.", actions: [] },
