@@ -1,0 +1,26 @@
+# Two beats in one file — grouped because they belong to the same late-game
+# arc, not because the format requires it.
+- id: win-over-grimble
+  description: The player earns Grimble's trust enough to pass the lake.
+  trigger: >
+    Grimble's trust rises far enough to let the player pass — a gift such as
+    the coin or gemstone, a riddle answered, or genuine kindness. Nudge his
+    trust upward yourself as the scene warrants; advancing the beat locks in
+    the rest.
+  effects:
+    - type: setCharacterState
+      charId: grimble
+      key: bribed
+      value: true
+    - type: setCharacterState
+      charId: grimble
+      key: mood
+      value: trusting
+
+- id: claim-the-gem
+  description: The player takes the perfect gemstone from the alcove.
+  trigger: The player picks up the gemstone.
+  effects:
+    - type: setGameState
+      key: treasureClaimed
+      value: true

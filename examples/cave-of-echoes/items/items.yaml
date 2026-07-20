@@ -1,0 +1,25 @@
+# All four items in one file — a directory of many files is a convention,
+# not a requirement; group entities however reads best.
+- id: lantern
+  name: brass lantern
+  description: >
+    A dented brass lantern, cold to the touch. It still holds oil, and it
+    will light if you can find a way to spark it.
+  location: entrance
+
+- id: rope
+  name: coil of rope
+  description: A sturdy coil of hemp rope, frayed but serviceable.
+  location: cavern
+
+- id: gemstone
+  name: perfect gemstone
+  description: >
+    A flawless gem the size of a plum. It seems to hold light longer than it
+    should, glowing faintly even after you look away.
+  location: alcove
+
+- id: copper-coin
+  name: tarnished copper coin
+  description: An old copper coin, worn smooth. Grimble covets shiny things.
+  location: grimble

@@ -1,0 +1,20 @@
+# A file may hold more than one entity — here, both rooms you meet first.
+- id: entrance
+  name: Cave Mouth
+  description: >
+    A jagged crack in the hillside, just wide enough to squeeze through.
+    Daylight gives out a few steps in, where the floor drops away into
+    blackness. Cold air pours up from below, carrying a faint mineral smell.
+  exits:
+    down: cavern
+
+- id: cavern
+  name: The Great Cavern
+  description: >
+    An immense vaulted space. Your footsteps scatter into echoes that take
+    too long to return. Passages lead off in three directions, and a rope
+    lies coiled where someone dropped it long ago.
+  exits:
+    up: entrance
+    north: lake
+    east: alcove
