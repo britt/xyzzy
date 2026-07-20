@@ -78,6 +78,31 @@ describe("readAdventureFile", () => {
     expect(raw.entities.rooms.map((r) => r.id)).toEqual(["a", "b"]);
   });
 
+  it("merges entities from arbitrarily nested subfolders of a conventional directory", () => {
+    const dir = tmp();
+    writeAdventure(dir);
+    mkdirSync(join(dir, "characters"));
+    mkdirSync(join(dir, "characters", "trolls"), { recursive: true });
+    writeFileSync(
+      join(dir, "characters", "dave.yaml"),
+      "id: dave\nname: Dave\nstate: {}\n",
+      "utf8",
+    );
+    writeFileSync(
+      join(dir, "characters", "trolls", "grimble.yaml"),
+      "id: grimble\nname: Grimble\nstate: {}\n",
+      "utf8",
+    );
+
+    const raw = readAdventureFile(dir) as {
+      entities: { characters: { id: string }[] };
+    };
+    expect(raw.entities.characters.map((c) => c.id).sort()).toEqual([
+      "dave",
+      "grimble",
+    ]);
+  });
+
   it("merges beats from a conventional beats/ directory", () => {
     const dir = tmp();
     writeAdventure(dir);

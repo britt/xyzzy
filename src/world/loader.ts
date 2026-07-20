@@ -32,21 +32,40 @@ function isYamlFile(name: string): boolean {
 }
 
 /**
- * Read every `*.yaml`/`*.yml` file directly inside `dir` (non-recursive) and
- * flatten them into a list of raw values. Each file may contain a single
- * entity/beat object or an array of them. Returns `[]` if `dir` doesn't exist.
+ * Recursively list every `*.yaml`/`*.yml` file under `dir`, at any depth of
+ * nesting, in deterministic (depth-first, alphabetical-per-level) order.
+ * Returns `[]` if `dir` doesn't exist.
  */
-function readConventionalDir(dir: string): SourcedValue[] {
-  let names: string[];
+function listYamlFilesRecursive(dir: string): string[] {
+  let entries: import("node:fs").Dirent[];
   try {
-    names = readdirSync(dir).filter(isYamlFile).sort();
+    entries = readdirSync(dir, { withFileTypes: true }).sort((a, b) =>
+      a.name.localeCompare(b.name),
+    );
   } catch {
     return [];
   }
 
+  const out: string[] = [];
+  for (const entry of entries) {
+    const full = join(dir, entry.name);
+    if (entry.isDirectory()) {
+      out.push(...listYamlFilesRecursive(full));
+    } else if (entry.isFile() && isYamlFile(entry.name)) {
+      out.push(full);
+    }
+  }
+  return out;
+}
+
+/**
+ * Read every `*.yaml`/`*.yml` file under `dir`, at any depth of nesting, and
+ * flatten them into a list of raw values. Each file may contain a single
+ * entity/beat object or an array of them. Returns `[]` if `dir` doesn't exist.
+ */
+function readConventionalDir(dir: string): SourcedValue[] {
   const out: SourcedValue[] = [];
-  for (const name of names) {
-    const file = join(dir, name);
+  for (const file of listYamlFilesRecursive(dir)) {
     let text: string;
     try {
       text = readFileSync(file, "utf8");
