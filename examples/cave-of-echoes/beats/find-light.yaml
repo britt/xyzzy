@@ -1,0 +1,16 @@
+# A beat's `trigger` tells the model *when* to advance it; its `effects` are
+# the state changes the engine applies automatically and atomically when it
+# does — so a beat's consequences can never be half-applied. Effects use the
+# same verbs as the model's own tool calls (setFlag, setGameState,
+# setCharacterState, addItem, …) and are additive: the model may still make
+# its own changes in the same turn.
+id: find-light
+description: The player lights the brass lantern and can see in the dark.
+trigger: The player finds a way to spark the lantern.
+effects:
+  - type: setFlag
+    key: lanternLit
+    value: true
+  - type: setGameState
+    key: playerCanSee
+    value: true
