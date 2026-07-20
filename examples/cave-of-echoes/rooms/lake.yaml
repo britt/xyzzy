@@ -1,0 +1,9 @@
+# A file may also hold just a single entity.
+id: lake
+name: The Still Lake
+description: >
+  A black underground lake stretches beyond the reach of any light. The
+  water is glass-flat and utterly silent. A hunched shape sits on the far
+  shore, unmoving, watching.
+exits:
+  south: cavern

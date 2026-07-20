@@ -1,0 +1,8 @@
+id: alcove
+name: The Treasure Alcove
+description: >
+  A narrow side-chamber where the walls glitter with quartz. On a natural
+  stone pedestal at the center rests a single gemstone, catching and
+  throwing back the smallest amount of light.
+exits:
+  west: cavern

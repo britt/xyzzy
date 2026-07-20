@@ -1,0 +1,16 @@
+id: grimble
+name: Grimble
+persona: >
+  An ancient, lonely cave troll who guards the lake more out of habit than
+  malice. He is slow, suspicious of strangers, and desperately fond of
+  shiny objects. He will not let anyone pass to the far shore unless they
+  earn his trust — a gift, a kind word, or a good riddle answered. He
+  speaks in short, rumbling sentences and remembers every slight.
+location: lake
+history:
+  - Has guarded the still lake for longer than he can count.
+  - Was tricked once, ages ago, and has trusted no one since.
+state:
+  trust: 10
+  mood: wary
+  bribed: false
