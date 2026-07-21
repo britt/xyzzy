@@ -1,7 +1,7 @@
-import { mkdtempSync } from "node:fs";
+import { mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { render } from "ink-testing-library";
 import { App } from "./App.js";
 import { newGameState } from "../engine/state.js";
@@ -9,6 +9,7 @@ import { FakeNarratorModel, type NarratorModel } from "../llm/NarratorModel.js";
 import { FakeDetector, type Detector } from "../llm/Detector.js";
 import type { Adventure } from "../world/schema.js";
 import type { ProviderConfig } from "../config/schema.js";
+import { logPath } from "../util/log.js";
 
 const adventure: Adventure = {
   meta: { id: "a", title: "Cave", version: "1" },
@@ -354,6 +355,90 @@ describe("App", () => {
     await type(stdin, "look around");
     await expect.poll(() => lastFrame()).toContain("no SDK for this provider");
     expect(lastFrame()).toContain("turn 0"); // no turn advanced
+    unmount();
+  });
+});
+
+describe("turn timing logging", () => {
+  const savedState = process.env.XDG_STATE_HOME;
+
+  beforeEach(() => {
+    process.env.XDG_STATE_HOME = mkdtempSync(join(tmpdir(), "xyzzy-tui-log-"));
+  });
+  afterEach(() => {
+    if (savedState === undefined) delete process.env.XDG_STATE_HOME;
+    else process.env.XDG_STATE_HOME = savedState;
+  });
+
+  function readLog(): Record<string, unknown>[] {
+    return readFileSync(logPath(), "utf8")
+      .trim()
+      .split("\n")
+      .map((l) => JSON.parse(l));
+  }
+
+  it("logs a turn timing summary after a successful turn", async () => {
+    const model = new FakeNarratorModel([{ narration: "You look around.", actions: [] }]);
+    const { stdin, unmount } = mount(model);
+
+    await type(stdin, "look");
+    await expect
+      .poll(() => readLog().some((r) => r.message === "turn timing"))
+      .toBe(true);
+
+    const rec = readLog().find((r) => r.message === "turn timing")!;
+    const detail = rec.detail as Record<string, unknown>;
+    expect(detail).toMatchObject({
+      turn: 1,
+      detectorCalls: 0,
+      detectorMs: null,
+      narratorCalls: 1,
+      ok: true,
+    });
+    expect(typeof detail.totalMs).toBe("number");
+    expect(typeof detail.narratorMs).toBe("number");
+    unmount();
+  });
+
+  it("logs a turn timing summary (ok: false) when the turn fails", async () => {
+    const model: NarratorModel = { generate: () => Promise.reject(new Error("boom")) };
+    const { stdin, unmount } = mount(model);
+
+    await type(stdin, "look");
+    await expect
+      .poll(() => readLog().some((r) => r.message === "turn timing"))
+      .toBe(true);
+
+    const rec = readLog().find((r) => r.message === "turn timing")!;
+    const detail = rec.detail as Record<string, unknown>;
+    expect(detail).toMatchObject({ turn: 1, ok: false });
+    expect(typeof detail.totalMs).toBe("number");
+    unmount();
+  });
+});
+
+describe("/timing command", () => {
+  it("toggles the timing display on and off", async () => {
+    const { lastFrame, stdin, unmount } = mount(new FakeNarratorModel());
+
+    await type(stdin, "/timing");
+    await expect.poll(() => lastFrame()).toContain("Timing display on.");
+
+    await type(stdin, "/timing");
+    await expect.poll(() => lastFrame()).toContain("Timing display off.");
+
+    await type(stdin, "/timing on");
+    await expect.poll(() => lastFrame()).toContain("Timing display on.");
+
+    await type(stdin, "/timing off");
+    await expect.poll(() => lastFrame()).toContain("Timing display off.");
+    unmount();
+  });
+
+  it("/help lists /timing", async () => {
+    const { lastFrame, stdin, unmount } = mount(new FakeNarratorModel());
+    await type(stdin, "/help");
+    await expect.poll(() => lastFrame()).toContain("/timing");
     unmount();
   });
 });
