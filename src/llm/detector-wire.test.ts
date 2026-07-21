@@ -14,6 +14,8 @@ const ctx: DetectionContext = {
   input: "go down",
   exits: [{ direction: "down", destination: "The Great Cavern" }],
   activeBeats: [],
+  characterBeats: [],
+  interactions: [],
 };
 
 /** A minimal, valid OpenAI chat-completion whose content is the JSON object. */
@@ -65,7 +67,12 @@ describe("createDetector wire format", () => {
         baseURL: "http://localhost:9/v1",
         model: "m1",
       });
-      expect(detection).toEqual({ move: "down", advancedBeats: [] });
+      expect(detection).toEqual({
+        move: "down",
+        advancedBeats: [],
+        advancedCharacterBeats: [],
+        triggeredInteractions: [],
+      });
       expect(body.tool_choice).toBeUndefined();
       expect(body.response_format?.type).toBe("json_schema");
       expect(body.response_format?.json_schema?.schema).toBeDefined();

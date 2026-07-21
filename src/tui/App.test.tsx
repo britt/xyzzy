@@ -90,7 +90,9 @@ describe("App", () => {
       { narration: "You walk on.", actions: [] },
     ]);
     const makeDetector = () =>
-      new FakeDetector([{ move: "north", advancedBeats: [] }]);
+      new FakeDetector([
+        { move: "north", advancedBeats: [], advancedCharacterBeats: [], triggeredInteractions: [] },
+      ]);
     const { lastFrame, stdin, unmount } = mount(
       model,
       () => model,

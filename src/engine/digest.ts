@@ -1,8 +1,40 @@
-import type { Adventure, GameState, Value } from "../world/schema.js";
+import type { Adventure, GameState, Interaction, Value } from "../world/schema.js";
 
 /** A beat is active until its `beat:<id>` flag reads "advanced". */
 export function isBeatAdvanced(state: GameState, beatId: string): boolean {
   return state.flags[`beat:${beatId}`] === "advanced";
+}
+
+/** A character beat is active until its `beat:<id>` key in that character's own
+ * state bag reads "advanced" — the same convention `isBeatAdvanced` uses for
+ * the global `flags` bag, scoped per character. */
+export function isCharacterBeatAdvanced(
+  state: GameState,
+  charId: string,
+  beatId: string,
+): boolean {
+  return state.characters[charId]?.state[`beat:${beatId}`] === "advanced";
+}
+
+/** How many times a character's interaction has fired so far. */
+export function interactionCount(
+  state: GameState,
+  charId: string,
+  interactionId: string,
+): number {
+  const value = state.characters[charId]?.state[`interaction:${interactionId}:count`];
+  return typeof value === "number" ? value : 0;
+}
+
+/** True once an interaction has fired `limit` times. An interaction with no
+ * `limit` can never be exhausted. */
+export function isInteractionExhausted(
+  state: GameState,
+  charId: string,
+  interaction: Interaction,
+): boolean {
+  if (interaction.limit === undefined) return false;
+  return interactionCount(state, charId, interaction.id) >= interaction.limit;
 }
 
 function renderBag(bag: Record<string, Value>): string {
@@ -72,6 +104,25 @@ export function buildDigest(adventure: Adventure, state: GameState): string {
       const history = live?.history ?? c.history;
       if (history.length) {
         lines.push(`    history: ${history.join("; ")}`);
+      }
+      const activeBeats = (c.beats ?? []).filter(
+        (b) => !isCharacterBeatAdvanced(state, c.id, b.id),
+      );
+      const activeInteractions = (c.interactions ?? []).filter(
+        (i) => !isInteractionExhausted(state, c.id, i),
+      );
+      if (activeBeats.length || activeInteractions.length) {
+        lines.push("    goals:");
+        for (const b of activeBeats) {
+          lines.push(`      - [${b.id}] ${b.description.trim()}`);
+        }
+        for (const i of activeInteractions) {
+          const suffix =
+            i.limit !== undefined
+              ? ` (${interactionCount(state, c.id, i.id)}/${i.limit})`
+              : "";
+          lines.push(`      - [${i.id}] ${i.description.trim()}${suffix}`);
+        }
       }
     }
   }

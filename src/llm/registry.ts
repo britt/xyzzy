@@ -7,6 +7,7 @@ import {
   type LanguageModel,
 } from "ai";
 import type { Action } from "../world/actions.js";
+import { DETECTION_OWNED_ACTIONS } from "../world/actions.js";
 import type { ProviderConfig } from "../config/schema.js";
 import type { Message } from "../world/schema.js";
 import {
@@ -21,18 +22,13 @@ import { ACTION_TOOLS, toAction } from "./tools.js";
 /** Max tool-loop steps per turn (model may narrate + emit several mutations). */
 const MAX_STEPS = 6;
 
-/** Action types the detection pre-pass owns; not offered to the narration model. */
-const DETECTION_OWNED = ["moveTo", "advanceBeat"] as const;
-
 /**
  * The tool names the narration model is offered: every reducer action tool
  * except the detection-owned movement/beat ones (which the pre-pass decides).
  */
 export const NARRATION_TOOL_NAMES = (
   Object.keys(ACTION_TOOLS) as (keyof typeof ACTION_TOOLS)[]
-).filter(
-  (n) => !DETECTION_OWNED.includes(n as (typeof DETECTION_OWNED)[number]),
-);
+).filter((n) => !DETECTION_OWNED_ACTIONS.includes(n));
 
 export class ProviderError extends Error {
   constructor(message: string) {
@@ -194,10 +190,14 @@ const DETECT_TIMEOUT_MS = 120_000;
 
 const DETECT_SYSTEM =
   "You extract structured intent from a text-adventure player's command. " +
-  "Given the available exits (with destinations) and the active story beats " +
-  "(with triggers), decide which exit the player is trying to take (or none) " +
-  "and which beats' triggers the command now satisfies. Do not invent exits " +
-  "or beats.";
+  "Given the available exits (with destinations), the active story beats " +
+  "(with triggers), and any beats or interactions belonging to characters " +
+  "currently in the scene (with triggers), decide which exit the player is " +
+  "trying to take (or none), which beats' triggers the command now " +
+  "satisfies, and which character beats/interactions it triggers. Character " +
+  "beats and interactions are listed as `character/id: trigger` — echo back " +
+  "the exact `character/id` token for any that fire. Do not invent exits, " +
+  "beats, characters, or interactions.";
 
 /**
  * Resolve a {@link ProviderConfig} to a structured {@link Detector}: one
@@ -212,7 +212,12 @@ export function createDetector(config: ProviderConfig): Detector {
   const languageModel = createLanguageModel(config, { structuredOutputs: true });
   return {
     async detect(ctx): Promise<Detection> {
-      const schema = buildDetectionSchema(ctx.exits, ctx.activeBeats);
+      const schema = buildDetectionSchema(
+        ctx.exits,
+        ctx.activeBeats,
+        ctx.characterBeats,
+        ctx.interactions,
+      );
       const prompt = [
         `Player command: ${ctx.input}`,
         `Exits: ${
@@ -222,6 +227,16 @@ export function createDetector(config: ProviderConfig): Detector {
         `Active beats: ${
           ctx.activeBeats.map((b) => `${b.id}: ${b.trigger}`).join(" | ") ||
           "(none)"
+        }`,
+        `Character beats: ${
+          ctx.characterBeats
+            .map((b) => `${b.charId}/${b.beatId}: ${b.trigger}`)
+            .join(" | ") || "(none)"
+        }`,
+        `Character interactions: ${
+          ctx.interactions
+            .map((i) => `${i.charId}/${i.interactionId}: ${i.trigger}`)
+            .join(" | ") || "(none)"
         }`,
       ].join("\n");
 
