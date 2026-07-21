@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 import { render } from "ink-testing-library";
 import { App } from "./App.js";
 import { newGameState } from "../engine/state.js";
+import { saveGame } from "../engine/save.js";
 import { FakeNarratorModel, type NarratorModel } from "../llm/NarratorModel.js";
 import { FakeDetector, type Detector } from "../llm/Detector.js";
 import type { Adventure } from "../world/schema.js";
@@ -47,6 +48,7 @@ function mount(
   listModels: (config: ProviderConfig) => Promise<string[]> = async () => [],
   providers: Record<string, ProviderConfig> = {},
   makeDetector?: (config: ProviderConfig) => Detector,
+  adventureDir: string = mkdtempSync(join(tmpdir(), "xyzzy-tui-")),
 ) {
   return render(
     <App
@@ -57,7 +59,7 @@ function mount(
       makeDetector={makeDetector}
       listModels={listModels}
       providers={providers}
-      adventureDir={mkdtempSync(join(tmpdir(), "xyzzy-tui-"))}
+      adventureDir={adventureDir}
       saveSlot="autosave"
     />,
   );
@@ -330,6 +332,75 @@ describe("App", () => {
       .poll(() => lastFrame())
       .toContain("Endpoint set to http://box:8080/v1");
     expect(requested[0]?.baseURL).toBe("http://box:8080/v1");
+    unmount();
+  });
+
+  it("/load with no argument lists known saves", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "xyzzy-tui-"));
+    const state = newGameState(adventure, "now");
+    await saveGame(dir, "autosave", state);
+    await saveGame(dir, "before-boss", state);
+    const { lastFrame, stdin, unmount } = mount(
+      new FakeNarratorModel(),
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      dir,
+    );
+
+    await type(stdin, "/load");
+
+    await expect.poll(() => lastFrame()).toContain("Known saves:");
+    expect(lastFrame()).toContain("autosave");
+    expect(lastFrame()).toContain("before-boss");
+    unmount();
+  });
+
+  it("/load list lists known saves", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "xyzzy-tui-"));
+    await saveGame(dir, "autosave", newGameState(adventure, "now"));
+    const { lastFrame, stdin, unmount } = mount(
+      new FakeNarratorModel(),
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      dir,
+    );
+
+    await type(stdin, "/load list");
+
+    await expect.poll(() => lastFrame()).toContain("Known saves:");
+    expect(lastFrame()).toContain("autosave");
+    unmount();
+  });
+
+  it("/load list reports when there are no saves", async () => {
+    const { lastFrame, stdin, unmount } = mount();
+
+    await type(stdin, "/load list");
+
+    await expect.poll(() => lastFrame()).toContain("No saves found.");
+    unmount();
+  });
+
+  it("/load <slot> still loads a specific save", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "xyzzy-tui-"));
+    const state = newGameState(adventure, "now");
+    await saveGame(dir, "before-boss", state);
+    const { lastFrame, stdin, unmount } = mount(
+      new FakeNarratorModel(),
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      dir,
+    );
+
+    await type(stdin, "/load before-boss");
+
+    await expect.poll(() => lastFrame()).toContain('Loaded slot "before-boss".');
     unmount();
   });
 

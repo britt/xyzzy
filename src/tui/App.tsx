@@ -6,7 +6,7 @@ import type { NarratorModel } from "../llm/NarratorModel.js";
 import type { Detector } from "../llm/Detector.js";
 import type { ProviderConfig } from "../config/schema.js";
 import { runTurn } from "../engine/turnLoop.js";
-import { loadGame, saveGame } from "../engine/save.js";
+import { listSaves, loadGame, saveGame } from "../engine/save.js";
 import { buildMap } from "../engine/asciiMap.js";
 import { PromptInput } from "./PromptInput.js";
 import { log, logPath, userMessage } from "../util/log.js";
@@ -83,7 +83,8 @@ function describeProvider(config: ProviderConfig): string {
 
 const HELP = [
   "/save [slot]        save the game (defaults to the autosave slot)",
-  "/load [slot]        load a saved game",
+  "/load <slot>        load a saved game",
+  "/load list          list known saves (default with no argument)",
   "/model [id]         show the current LLM, or switch to model <id>",
   "/model list         list models offered by the endpoint",
   "/provider           show the current provider",
@@ -290,9 +291,19 @@ export function App({
         push("system", `Saved to slot "${arg || saveSlot}".`);
         return true;
       case "/load": {
-        const loaded = await loadGame(adventureDir, arg || saveSlot);
+        if (arg === "" || arg === "list") {
+          const saves = listSaves(adventureDir);
+          push(
+            "system",
+            saves.length
+              ? "Known saves:\n" + saves.map((s) => `    ${s}`).join("\n")
+              : "No saves found.",
+          );
+          return true;
+        }
+        const loaded = await loadGame(adventureDir, arg);
         setState(loaded);
-        push("system", `Loaded slot "${arg || saveSlot}".`);
+        push("system", `Loaded slot "${arg}".`);
         return true;
       }
       default:

@@ -1,4 +1,4 @@
-import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, readdirSync, renameSync, writeFileSync } from "node:fs";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { GameState } from "../world/schema.js";
@@ -22,6 +22,16 @@ export function savePath(adventureDir: string, slot: string): string {
 /** Whether a save slot exists on disk. */
 export function saveExists(adventureDir: string, slot: string): boolean {
   return existsSync(savePath(adventureDir, slot));
+}
+
+/** List known save slot names, sorted alphabetically. */
+export function listSaves(adventureDir: string): string[] {
+  const dir = savesDir(adventureDir);
+  if (!existsSync(dir)) return [];
+  return readdirSync(dir)
+    .filter((f) => f.endsWith(".json"))
+    .map((f) => f.slice(0, -".json".length))
+    .sort();
 }
 
 /**
