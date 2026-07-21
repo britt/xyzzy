@@ -84,6 +84,27 @@ describe("canonicalizeAction", () => {
       canonicalizeAction(adventure, atHall, { type: "moveTo", room: "north" }),
     ).toEqual({ type: "moveTo", room: "north" });
   });
+
+  it("resolves a character name to its id for advanceCharacterBeat and triggerInteraction", () => {
+    const withChar: Adventure = {
+      ...adventure,
+      entities: { ...adventure.entities, characters: [{ id: "g", name: "The Guard", persona: "p", history: [], state: {} }] },
+    };
+    expect(
+      canonicalizeAction(withChar, atStart, {
+        type: "advanceCharacterBeat",
+        charId: "The Guard",
+        beatId: "confess",
+      }),
+    ).toEqual({ type: "advanceCharacterBeat", charId: "g", beatId: "confess" });
+    expect(
+      canonicalizeAction(withChar, atStart, {
+        type: "triggerInteraction",
+        charId: "The Guard",
+        interactionId: "offer-drink",
+      }),
+    ).toEqual({ type: "triggerInteraction", charId: "g", interactionId: "offer-drink" });
+  });
 });
 
 describe("expandBeatEffects", () => {
@@ -135,6 +156,107 @@ describe("expandBeatEffects", () => {
       { type: "advanceBeat", beatId: "unknown" },
     ] as const;
     expect(expandBeatEffects(withBeats, state, [...actions])).toEqual(actions);
+  });
+
+  const withCharacterBeats: Adventure = {
+    meta: { id: "a", title: "A", version: "1" },
+    premise: "p",
+    start: { room: "start" },
+    entities: {
+      characters: [
+        {
+          id: "barkeep",
+          name: "Barkeep",
+          persona: "gruff",
+          history: [],
+          state: {},
+          beats: [
+            {
+              id: "confess",
+              description: "Confesses.",
+              effects: [{ type: "setFlag", key: "knowsSecret", value: true }],
+            },
+          ],
+          interactions: [
+            {
+              id: "offer-drink",
+              description: "Offers a drink.",
+              limit: 1,
+              effects: [{ type: "addItem", item: "ale" }],
+            },
+          ],
+        },
+      ],
+    },
+  };
+
+  it("inserts a character beat's effects before the advanceCharacterBeat action", () => {
+    const state = newGameState(withCharacterBeats, "c");
+    expect(
+      expandBeatEffects(withCharacterBeats, state, [
+        { type: "advanceCharacterBeat", charId: "barkeep", beatId: "confess" },
+      ]),
+    ).toEqual([
+      { type: "setFlag", key: "knowsSecret", value: true },
+      { type: "advanceCharacterBeat", charId: "barkeep", beatId: "confess" },
+    ]);
+  });
+
+  it("does not reapply a character beat's effects once advanced", () => {
+    const state = {
+      ...newGameState(withCharacterBeats, "c"),
+      characters: {
+        barkeep: { location: undefined, history: [], state: { "beat:confess": "advanced" } },
+      },
+    };
+    expect(
+      expandBeatEffects(withCharacterBeats, state, [
+        { type: "advanceCharacterBeat", charId: "barkeep", beatId: "confess" },
+      ]),
+    ).toEqual([{ type: "advanceCharacterBeat", charId: "barkeep", beatId: "confess" }]);
+  });
+
+  it("inserts an interaction's effects before the triggerInteraction action while under its limit", () => {
+    const state = newGameState(withCharacterBeats, "c");
+    expect(
+      expandBeatEffects(withCharacterBeats, state, [
+        { type: "triggerInteraction", charId: "barkeep", interactionId: "offer-drink" },
+      ]),
+    ).toEqual([
+      { type: "addItem", item: "ale" },
+      { type: "triggerInteraction", charId: "barkeep", interactionId: "offer-drink" },
+    ]);
+  });
+
+  it("drops a triggerInteraction action entirely once its limit is reached", () => {
+    const state = {
+      ...newGameState(withCharacterBeats, "c"),
+      characters: {
+        barkeep: {
+          location: undefined,
+          history: [],
+          state: { "interaction:offer-drink:count": 1 },
+        },
+      },
+    };
+    expect(
+      expandBeatEffects(withCharacterBeats, state, [
+        { type: "triggerInteraction", charId: "barkeep", interactionId: "offer-drink" },
+      ]),
+    ).toEqual([]);
+  });
+
+  it("only applies a limit:1 interaction once when the same trigger appears twice in one batch", () => {
+    const state = newGameState(withCharacterBeats, "c");
+    const trigger = {
+      type: "triggerInteraction" as const,
+      charId: "barkeep",
+      interactionId: "offer-drink",
+    };
+    expect(expandBeatEffects(withCharacterBeats, state, [trigger, trigger])).toEqual([
+      { type: "addItem", item: "ale" },
+      trigger,
+    ]);
   });
 });
 
@@ -379,7 +501,9 @@ describe("runTurn", () => {
 
   it("moves the player when detection returns a direction", async () => {
     const model = new FakeNarratorModel([{ narration: "You go.", actions: [] }]);
-    const detector = new FakeDetector([{ move: "north", advancedBeats: [] }]);
+    const detector = new FakeDetector([
+      { move: "north", advancedBeats: [], advancedCharacterBeats: [], triggeredInteractions: [] },
+    ]);
     const { state } = await runTurn(
       { ...deps(model), detector },
       newGameState(adventure, "c"), // at "start", north -> hall
@@ -403,7 +527,9 @@ describe("runTurn", () => {
       ],
     };
     const model = new FakeNarratorModel([{ narration: "ok", actions: [] }]);
-    const detector = new FakeDetector([{ move: null, advancedBeats: ["claim"] }]);
+    const detector = new FakeDetector([
+      { move: null, advancedBeats: ["claim"], advancedCharacterBeats: [], triggeredInteractions: [] },
+    ]);
     const { state } = await runTurn(
       { adventure: gem, model, detector, clock: () => "t" },
       newGameState(gem, "c"),
@@ -411,6 +537,109 @@ describe("runTurn", () => {
     );
     expect(state.flags["beat:claim"]).toBe("advanced");
     expect(state.state.treasureClaimed).toBe(true);
+  });
+
+  it("advances a detected character beat and applies its effects", async () => {
+    const tavern: Adventure = {
+      meta: { id: "t", title: "T", version: "1" },
+      premise: "p",
+      start: { room: "bar" },
+      entities: {
+        rooms: [{ id: "bar", name: "Bar", description: "d" }],
+        characters: [
+          {
+            id: "barkeep",
+            name: "Barkeep",
+            persona: "gruff",
+            location: "bar",
+            history: [],
+            state: {},
+            beats: [
+              {
+                id: "confess",
+                description: "Confesses the secret.",
+                effects: [{ type: "setFlag", key: "knowsSecret", value: true }],
+              },
+            ],
+          },
+        ],
+      },
+    };
+    const model = new FakeNarratorModel([{ narration: "ok", actions: [] }]);
+    const detector = new FakeDetector([
+      {
+        move: null,
+        advancedBeats: [],
+        advancedCharacterBeats: [{ charId: "barkeep", beatId: "confess" }],
+        triggeredInteractions: [],
+      },
+    ]);
+    const { state } = await runTurn(
+      { adventure: tavern, model, detector, clock: () => "t" },
+      newGameState(tavern, "c"),
+      "press the barkeep",
+    );
+    expect(state.characters.barkeep!.state["beat:confess"]).toBe("advanced");
+    expect(state.flags.knowsSecret).toBe(true); // effect applied by the engine
+  });
+
+  it("triggers a detected character interaction, applies its effects, and respects its limit", async () => {
+    const tavern: Adventure = {
+      meta: { id: "t", title: "T", version: "1" },
+      premise: "p",
+      start: { room: "bar" },
+      entities: {
+        rooms: [{ id: "bar", name: "Bar", description: "d" }],
+        characters: [
+          {
+            id: "barkeep",
+            name: "Barkeep",
+            persona: "gruff",
+            location: "bar",
+            history: [],
+            state: {},
+            interactions: [
+              {
+                id: "offer-drink",
+                description: "Offers a drink.",
+                limit: 1,
+                effects: [{ type: "addItem", item: "ale" }],
+              },
+            ],
+          },
+        ],
+      },
+    };
+    const model = new FakeNarratorModel([
+      { narration: "ok", actions: [] },
+      { narration: "ok again", actions: [] },
+    ]);
+    const detector = new FakeDetector([
+      {
+        move: null,
+        advancedBeats: [],
+        advancedCharacterBeats: [],
+        triggeredInteractions: [{ charId: "barkeep", interactionId: "offer-drink" }],
+      },
+    ]);
+    const first = await runTurn(
+      { adventure: tavern, model, detector, clock: () => "t" },
+      newGameState(tavern, "c"),
+      "ask for a drink",
+    );
+    expect(first.state.characters.barkeep!.state["interaction:offer-drink:count"]).toBe(1);
+    expect(first.state.inventory).toContain("ale");
+
+    // Triggering it again past its limit must not re-apply the effect or
+    // bump the count further (mirrors the expandBeatEffects idempotency test,
+    // proven here through the full runTurn pipeline).
+    const second = await runTurn(
+      { adventure: tavern, model, detector, clock: () => "t" },
+      first.state,
+      "ask for another drink",
+    );
+    expect(second.state.characters.barkeep!.state["interaction:offer-drink:count"]).toBe(1);
+    expect(second.state.inventory.filter((i) => i === "ale")).toHaveLength(1);
   });
 
   it("degrades to no movement when detection throws", async () => {
@@ -430,7 +659,9 @@ describe("runTurn", () => {
     const model = new FakeNarratorModel([
       { narration: "You go.", actions: [{ type: "moveTo", room: "hall" }] },
     ]);
-    const detector = new FakeDetector([{ move: null, advancedBeats: [] }]);
+    const detector = new FakeDetector([
+      { move: null, advancedBeats: [], advancedCharacterBeats: [], triggeredInteractions: [] },
+    ]);
     const { state } = await runTurn(
       { ...deps(model), detector },
       newGameState(adventure, "c"),
@@ -439,9 +670,68 @@ describe("runTurn", () => {
     expect(state.location).toBe("start"); // narration's moveTo dropped
   });
 
+  it("ignores advanceCharacterBeat/triggerInteraction emitted by the narration model (detection owns them)", async () => {
+    const charAdventure: Adventure = {
+      meta: { id: "c", title: "C", version: "1" },
+      premise: "p",
+      start: { room: "start" },
+      entities: {
+        rooms: [{ id: "start", name: "Start", description: "d" }],
+        characters: [
+          {
+            id: "barkeep",
+            name: "Barkeep",
+            persona: "gruff",
+            history: [],
+            state: {},
+            beats: [
+              {
+                id: "confess",
+                description: "Confesses.",
+                effects: [{ type: "setFlag", key: "knowsSecret", value: true }],
+              },
+            ],
+            interactions: [
+              {
+                id: "offer-drink",
+                description: "Offers a drink.",
+                effects: [{ type: "addItem", item: "ale" }],
+              },
+            ],
+          },
+        ],
+      },
+    };
+    const model = new FakeNarratorModel([
+      {
+        narration: "You chat.",
+        actions: [
+          { type: "advanceCharacterBeat", charId: "barkeep", beatId: "confess" },
+          { type: "triggerInteraction", charId: "barkeep", interactionId: "offer-drink" },
+        ],
+      },
+    ]);
+    const detector = new FakeDetector([
+      { move: null, advancedBeats: [], advancedCharacterBeats: [], triggeredInteractions: [] },
+    ]);
+    const { state } = await runTurn(
+      { adventure: charAdventure, model, detector, clock: () => "t" },
+      newGameState(charAdventure, "c"),
+      "talk to barkeep",
+    );
+    expect(state.flags.knowsSecret).toBeUndefined(); // beat effect never applied
+    expect(state.inventory).not.toContain("ale"); // interaction effect never applied
+    expect(state.characters.barkeep?.state["beat:confess"]).toBeUndefined();
+    expect(
+      state.characters.barkeep?.state["interaction:offer-drink:count"],
+    ).toBeUndefined();
+  });
+
   it("narrates against the post-move room (new exits footer)", async () => {
     const model = new FakeNarratorModel([{ narration: "You arrive.", actions: [] }]);
-    const detector = new FakeDetector([{ move: "north", advancedBeats: [] }]);
+    const detector = new FakeDetector([
+      { move: "north", advancedBeats: [], advancedCharacterBeats: [], triggeredInteractions: [] },
+    ]);
     const { narration } = await runTurn(
       { ...deps(model), detector },
       newGameState(adventure, "c"),

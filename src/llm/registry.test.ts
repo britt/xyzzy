@@ -71,9 +71,11 @@ describe("listModels", () => {
 });
 
 describe("NARRATION_TOOL_NAMES", () => {
-  it("excludes moveTo and advanceBeat (owned by detection)", () => {
+  it("excludes moveTo, advanceBeat, advanceCharacterBeat, and triggerInteraction (owned by detection)", () => {
     expect(NARRATION_TOOL_NAMES).not.toContain("moveTo");
     expect(NARRATION_TOOL_NAMES).not.toContain("advanceBeat");
+    expect(NARRATION_TOOL_NAMES).not.toContain("advanceCharacterBeat");
+    expect(NARRATION_TOOL_NAMES).not.toContain("triggerInteraction");
   });
 
   it("keeps exactly the other narration mutation tools", () => {
@@ -97,16 +99,34 @@ describe("createDetector", () => {
     // generateObject is heavily overloaded; treat the mock loosely here so the
     // test can assert on the (schema, prompt) it receives without wire types.
     const mocked = generateObject as unknown as ReturnType<typeof vi.fn>;
-    mocked.mockResolvedValue({ object: { move: "north", advancedBeats: [] } });
+    mocked.mockResolvedValue({
+      object: {
+        move: "north",
+        advancedBeats: [],
+        advancedCharacterBeats: [],
+        triggeredInteractions: [],
+      },
+    });
 
     const detector = createDetector(config);
     const out = await detector.detect({
       input: "go north",
       exits: [{ direction: "north", destination: "Hall" }],
       activeBeats: [{ id: "reach-hall", trigger: "player reaches the hall" }],
+      characterBeats: [
+        { charId: "guard", beatId: "confess", trigger: "player presses the guard" },
+      ],
+      interactions: [
+        { charId: "guard", interactionId: "salute", trigger: "player salutes" },
+      ],
     });
 
-    expect(out).toEqual({ move: "north", advancedBeats: [] });
+    expect(out).toEqual({
+      move: "north",
+      advancedBeats: [],
+      advancedCharacterBeats: [],
+      triggeredInteractions: [],
+    });
 
     expect(mocked).toHaveBeenCalledTimes(1);
     const call = mocked.mock.calls[0]![0] as { schema: unknown; prompt: string };
@@ -115,5 +135,7 @@ describe("createDetector", () => {
     expect(prompt).toContain("go north");
     expect(prompt).toContain("north -> Hall");
     expect(prompt).toContain("reach-hall");
+    expect(prompt).toContain("guard/confess");
+    expect(prompt).toContain("guard/salute");
   });
 });

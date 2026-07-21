@@ -92,6 +92,30 @@ describe("reduce", () => {
     expect(next.flags["beat:escape"]).toBe("advanced");
   });
 
+  it("advanceCharacterBeat records an advanced beat flag scoped to the character", () => {
+    const next = reduce(baseState(), {
+      type: "advanceCharacterBeat",
+      charId: "barkeep",
+      beatId: "confess",
+    });
+    expect(next.characters.barkeep?.state["beat:confess"]).toBe("advanced");
+  });
+
+  it("triggerInteraction increments a per-character count starting from zero", () => {
+    let s = reduce(baseState(), {
+      type: "triggerInteraction",
+      charId: "barkeep",
+      interactionId: "offer-drink",
+    });
+    expect(s.characters.barkeep?.state["interaction:offer-drink:count"]).toBe(1);
+    s = reduce(s, {
+      type: "triggerInteraction",
+      charId: "barkeep",
+      interactionId: "offer-drink",
+    });
+    expect(s.characters.barkeep?.state["interaction:offer-drink:count"]).toBe(2);
+  });
+
   it("reduceAll folds a sequence in order", () => {
     const actions: Action[] = [
       { type: "moveTo", room: "hallway" },

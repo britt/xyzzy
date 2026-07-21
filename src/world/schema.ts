@@ -43,6 +43,26 @@ export const Item = z.object({
 });
 export type Item = z.infer<typeof Item>;
 
+export const StoryBeat = z.object({
+  id: z.string().min(1),
+  description: z.string().min(1),
+  /** optional trigger notes surfaced to the model */
+  trigger: z.string().optional(),
+  /**
+   * Declarative state changes applied atomically when the beat advances, so a
+   * beat's consequences live beside it and can't be half-applied. Each entry is
+   * a validated {@link Action} — the same mutation vocabulary the model uses.
+   */
+  effects: z.array(Action).optional(),
+});
+export type StoryBeat = z.infer<typeof StoryBeat>;
+
+export const Interaction = StoryBeat.extend({
+  /** Max number of times this interaction may fire. Omitted = unlimited. */
+  limit: z.number().int().positive().optional(),
+});
+export type Interaction = z.infer<typeof Interaction>;
+
 export const Character = z.object({
   id: z.string().min(1),
   name: z.string().min(1),
@@ -50,6 +70,10 @@ export const Character = z.object({
   location: z.string().optional(),
   history: z.array(z.string()).default([]),
   state: ValueBag.default({}),
+  /** Beats scoped to this character; each fires at most once. */
+  beats: z.array(StoryBeat).optional(),
+  /** Repeatable beats scoped to this character; see {@link Interaction.limit}. */
+  interactions: z.array(Interaction).optional(),
 });
 export type Character = z.infer<typeof Character>;
 
@@ -67,20 +91,6 @@ export const Start = z.object({
   state: ValueBag.optional(),
 });
 export type Start = z.infer<typeof Start>;
-
-export const StoryBeat = z.object({
-  id: z.string().min(1),
-  description: z.string().min(1),
-  /** optional trigger notes surfaced to the model */
-  trigger: z.string().optional(),
-  /**
-   * Declarative state changes applied atomically when the beat advances, so a
-   * beat's consequences live beside it and can't be half-applied. Each entry is
-   * a validated {@link Action} — the same mutation vocabulary the model uses.
-   */
-  effects: z.array(Action).optional(),
-});
-export type StoryBeat = z.infer<typeof StoryBeat>;
 
 export const Adventure = z.object({
   meta: Meta,
