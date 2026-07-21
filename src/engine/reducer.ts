@@ -62,6 +62,24 @@ export function reduce(state: GameState, action: Action): GameState {
         flags: { ...state.flags, [`beat:${action.beatId}`]: "advanced" },
       };
 
+    case "advanceCharacterBeat": {
+      const char = getOrCreateCharacter(state, action.charId);
+      return withCharacter(state, action.charId, {
+        ...char,
+        state: { ...char.state, [`beat:${action.beatId}`]: "advanced" },
+      });
+    }
+
+    case "triggerInteraction": {
+      const char = getOrCreateCharacter(state, action.charId);
+      const key = `interaction:${action.interactionId}:count`;
+      const count = typeof char.state[key] === "number" ? char.state[key] : 0;
+      return withCharacter(state, action.charId, {
+        ...char,
+        state: { ...char.state, [key]: count + 1 },
+      });
+    }
+
     default:
       // Exhaustiveness: adding an Action variant without a case is a type error.
       return assertNever(action);
