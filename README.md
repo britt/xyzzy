@@ -49,10 +49,8 @@ full shapes are documented in **[docs/data-model.md](docs/data-model.md)**.
 
 ## Installation
 
-> xyzzy is in early development. Once published:
-
 ```bash
-npm install -g xyzzy
+npm install -g @britt/xyzzy
 ```
 
 You'll also need a local model server running (for example
@@ -162,4 +160,4 @@ UI, the [Vercel AI SDK](https://sdk.vercel.ai) for model calls and tool-use, and
 
 ## License
 
-TBD.
+[MIT](LICENSE)
