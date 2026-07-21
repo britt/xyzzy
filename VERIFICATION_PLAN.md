@@ -9,7 +9,7 @@ These scenarios assume **no local LLM server is available**. They cover every CL
 - `bun install` has been run (dependencies present in `node_modules`).
 - Commands are run from the repo root via `bun run start -- <args>` (equivalent to the published `xyzzy` binary).
 - The real example adventure at `examples/cave-of-echoes` is present and untouched — copy it to a scratch directory (e.g. under `/tmp`) rather than editing it in place or writing saves into it.
-- A scratch temp directory for throwaway output (adventures, configs, saves), cleaned up after each scenario.
+- A scratch directory for throwaway output (adventures, configs, saves), cleaned up after each scenario.
 - Scenario 5 additionally requires a real interactive terminal (TTY), since Ink's input handling needs one.
 
 ## Scenarios
