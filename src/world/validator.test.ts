@@ -101,4 +101,81 @@ describe("checkCrossReferences", () => {
       "start.room",
     ]);
   });
+
+  it("flags a character with a duplicate beat id", () => {
+    const issues = checkCrossReferences(
+      base({
+        entities: {
+          characters: [
+            {
+              id: "g",
+              name: "G",
+              persona: "p",
+              history: [],
+              state: {},
+              beats: [
+                { id: "confess", description: "d" },
+                { id: "confess", description: "d again" },
+              ],
+            },
+          ],
+        },
+      }),
+    );
+    expect(issues).toEqual([
+      {
+        path: "entities.characters[0].beats[1].id",
+        message: 'duplicate beat id "confess"',
+      },
+    ]);
+  });
+
+  it("flags a character with a duplicate interaction id", () => {
+    const issues = checkCrossReferences(
+      base({
+        entities: {
+          characters: [
+            {
+              id: "g",
+              name: "G",
+              persona: "p",
+              history: [],
+              state: {},
+              interactions: [
+                { id: "chat", description: "d" },
+                { id: "chat", description: "d again" },
+              ],
+            },
+          ],
+        },
+      }),
+    );
+    expect(issues).toEqual([
+      {
+        path: "entities.characters[0].interactions[1].id",
+        message: 'duplicate interaction id "chat"',
+      },
+    ]);
+  });
+
+  it("allows a beat and an interaction on the same character to share an id", () => {
+    const issues = checkCrossReferences(
+      base({
+        entities: {
+          characters: [
+            {
+              id: "g",
+              name: "G",
+              persona: "p",
+              history: [],
+              state: {},
+              beats: [{ id: "shared", description: "d" }],
+              interactions: [{ id: "shared", description: "d" }],
+            },
+          ],
+        },
+      }),
+    );
+    expect(issues).toHaveLength(0);
+  });
 });

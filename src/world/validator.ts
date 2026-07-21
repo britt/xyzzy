@@ -91,6 +91,28 @@ export function checkCrossReferences(
         message: `unknown room "${char.location}"`,
       });
     }
+
+    const beatIds = new Set<string>();
+    (char.beats ?? []).forEach((beat, bi) => {
+      if (beatIds.has(beat.id)) {
+        issues.push({
+          path: `entities.characters[${ci}].beats[${bi}].id`,
+          message: `duplicate beat id "${beat.id}"`,
+        });
+      }
+      beatIds.add(beat.id);
+    });
+
+    const interactionIds = new Set<string>();
+    (char.interactions ?? []).forEach((interaction, ii) => {
+      if (interactionIds.has(interaction.id)) {
+        issues.push({
+          path: `entities.characters[${ci}].interactions[${ii}].id`,
+          message: `duplicate interaction id "${interaction.id}"`,
+        });
+      }
+      interactionIds.add(interaction.id);
+    });
   });
 
   if (adventure.start.room !== undefined && !roomIds.has(adventure.start.room)) {
