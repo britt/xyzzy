@@ -1,6 +1,6 @@
 {
-  "name": "xyzzy",
-  "version": "0.0.0",
+  "name": "@britt/xyzzy",
+  "version": "0.1.0",
   "description": "A toolkit for building and playing text adventures with local LLMs.",
   "keywords": [
     "text-adventure",
@@ -10,10 +10,22 @@
     "cli",
     "ink"
   ],
-  "license": "TBD",
+  "license": "MIT",
+  "author": "Britt",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/britt/xyzzy.git"
+  },
+  "homepage": "https://github.com/britt/xyzzy#readme",
+  "bugs": {
+    "url": "https://github.com/britt/xyzzy/issues"
+  },
   "type": "module",
   "engines": {
     "node": ">=20"
+  },
+  "publishConfig": {
+    "access": "public"
   },
   "bin": {
     "xyzzy": "./dist/cli/index.js"
