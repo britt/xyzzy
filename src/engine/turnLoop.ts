@@ -1,6 +1,6 @@
 import { Action, DETECTION_OWNED_ACTIONS } from "../world/actions.js";
 import type { Adventure, GameState, Room } from "../world/schema.js";
-import type { NarratorContext, NarratorModel } from "../llm/NarratorModel.js";
+import type { NarratorContext, NarratorModel, NarratorResult } from "../llm/NarratorModel.js";
 import type { Detector } from "../llm/Detector.js";
 import { buildDetectionContext } from "../llm/detection.js";
 import { buildDigest, isBeatAdvanced, isCharacterBeatAdvanced, isInteractionExhausted } from "./digest.js";
@@ -176,9 +176,21 @@ export function expandBeatEffects(
   return result;
 }
 
+/** Wall-clock breakdown of one turn's LLM calls, for the disk log and the
+ * optional `/timing` display. `detectorMs`/`detectorCalls` stay `null`/`0`
+ * when no detector is configured; `narratorCalls` is 2 only when the
+ * empty-narration retry fired. */
+export interface TurnTiming {
+  detectorMs: number | null;
+  detectorCalls: number;
+  narratorMs: number;
+  narratorCalls: number;
+}
+
 export interface TurnResult {
   narration: string;
   state: GameState;
+  timing: TurnTiming;
 }
 
 export interface TurnDeps {
@@ -279,6 +291,29 @@ export function buildSystemPrompt(adventure: Adventure): string {
  * error leaves the caller's state untouched (clean rollback, no corrupt save).
  * Invalid tool-call args are dropped before the reducer runs (defense-in-depth).
  */
+/**
+ * Time one `model.generate()` attempt and log it immediately, regardless of
+ * outcome — a call that throws is still worth knowing the duration of.
+ */
+async function timedGenerate(
+  model: NarratorModel,
+  context: NarratorContext,
+  turn: number,
+  attempt: number,
+): Promise<{ result: NarratorResult; ms: number }> {
+  const start = Date.now();
+  try {
+    const result = await model.generate(context);
+    const ms = Date.now() - start;
+    log.info("narrator call", { turn, attempt, ms, ok: true });
+    return { result, ms };
+  } catch (err) {
+    const ms = Date.now() - start;
+    log.info("narrator call", { turn, attempt, ms, ok: false });
+    throw err;
+  }
+}
+
 export async function runTurn(
   deps: TurnDeps,
   state: GameState,
@@ -287,12 +322,17 @@ export async function runTurn(
   const { adventure, model } = deps;
   const now = deps.clock ? deps.clock() : new Date().toISOString();
   const window = deps.transcriptWindow ?? DEFAULT_TRANSCRIPT_WINDOW;
+  const nextTurn = state.turn + 1;
 
   // --- Detection pre-pass: decide movement + beats deterministically before
   // narration, apply them, and narrate against the resulting `midState`. On any
   // detector failure we degrade to no detection and continue (`midState` = state).
   let midState = state;
+  let detectorMs: number | null = null;
+  let detectorCalls = 0;
   if (deps.detector) {
+    detectorCalls = 1;
+    const detectorStart = Date.now();
     try {
       const detection = await deps.detector.detect(
         buildDetectionContext(adventure, state, input),
@@ -313,7 +353,11 @@ export async function runTurn(
         state,
         expandBeatEffects(adventure, state, detectedActions),
       );
+      detectorMs = Date.now() - detectorStart;
+      log.info("detector call", { turn: nextTurn, ms: detectorMs, ok: true });
     } catch (err) {
+      detectorMs = Date.now() - detectorStart;
+      log.info("detector call", { turn: nextTurn, ms: detectorMs, ok: false });
       log.warn(
         "detection failed; continuing without it",
         describeError(err),
@@ -328,10 +372,18 @@ export async function runTurn(
     input,
   };
 
-  // Call the model; retry once if it produces no narration.
-  let result = await model.generate(context);
+  // Call the model; retry once if it produces no narration. Each attempt is
+  // timed and logged individually by `timedGenerate`; the two are summed
+  // below for the turn-level timing summary.
+  const first = await timedGenerate(model, context, nextTurn, 1);
+  let result = first.result;
+  let narratorMs = first.ms;
+  let narratorCalls = 1;
   if (result.narration.trim() === "") {
-    result = await model.generate(context);
+    const retry = await timedGenerate(model, context, nextTurn, 2);
+    result = retry.result;
+    narratorMs += retry.ms;
+    narratorCalls = 2;
     if (result.narration.trim() === "") throw new EmptyNarrationError();
   }
 
@@ -346,7 +398,6 @@ export async function runTurn(
     : [];
   const actions = processActions(adventure, midState, result.actions, excluded);
 
-  const nextTurn = midState.turn + 1;
   // Expand each advanced beat into its authored effects so they apply
   // atomically with the beat flag (idempotent: skipped if already advanced).
   const reduced = reduceAll(
@@ -377,5 +428,6 @@ export async function runTurn(
   return {
     narration,
     state: { ...reduced, turn: nextTurn, transcript, updatedAt: now },
+    timing: { detectorMs, detectorCalls, narratorMs, narratorCalls },
   };
 }
