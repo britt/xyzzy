@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { render } from "ink-testing-library";
-import { App } from "./App.js";
+import { App, formatDuration, formatTimingLine } from "./App.js";
 import { newGameState } from "../engine/state.js";
 import { FakeNarratorModel, type NarratorModel } from "../llm/NarratorModel.js";
 import { FakeDetector, type Detector } from "../llm/Detector.js";
@@ -439,6 +439,101 @@ describe("/timing command", () => {
     const { lastFrame, stdin, unmount } = mount(new FakeNarratorModel());
     await type(stdin, "/help");
     await expect.poll(() => lastFrame()).toContain("/timing");
+    unmount();
+  });
+});
+
+describe("timing display", () => {
+  it("formatDuration renders whole seconds with a decimal, except exactly 1 second", () => {
+    expect(formatDuration(1000)).toBe("1 second");
+    expect(formatDuration(2500)).toBe("2.5 seconds");
+    expect(formatDuration(1500)).toBe("1.5 seconds");
+    expect(formatDuration(3000)).toBe("3.0 seconds");
+  });
+
+  it("formatTimingLine matches the designed format, with and without a detector", () => {
+    expect(
+      formatTimingLine({
+        totalMs: 2500,
+        detectorMs: 1000,
+        detectorCalls: 1,
+        narratorMs: 1500,
+        narratorCalls: 1,
+      }),
+    ).toBe("Turn 2.5 seconds (detector - 1 second, narrator - 1.5 seconds)");
+
+    expect(
+      formatTimingLine({
+        totalMs: 1500,
+        detectorMs: null,
+        detectorCalls: 0,
+        narratorMs: 1500,
+        narratorCalls: 1,
+      }),
+    ).toBe("Turn 1.5 seconds (narrator - 1.5 seconds)");
+  });
+
+  it("does not show the timing line by default", async () => {
+    const model = new FakeNarratorModel([{ narration: "You look around.", actions: [] }]);
+    const { lastFrame, stdin, unmount } = mount(model);
+    await type(stdin, "look");
+    await expect.poll(() => lastFrame()).toContain("You look around.");
+    expect(lastFrame()).not.toContain("Turn "); // capital T — distinct from the "turn N" status bar
+    unmount();
+  });
+
+  it("shows the timing breakdown after a turn once enabled, without a detector clause", async () => {
+    const model = new FakeNarratorModel([{ narration: "You look around.", actions: [] }]);
+    const { lastFrame, stdin, unmount } = mount(model);
+
+    await type(stdin, "/timing on");
+    await type(stdin, "look");
+
+    await expect.poll(() => lastFrame()).toMatch(/Turn \d+(\.\d)? seconds? \(narrator - /);
+    expect(lastFrame()).not.toContain("detector -");
+    unmount();
+  });
+
+  it("includes the detector clause when a detector is configured", async () => {
+    const model = new FakeNarratorModel([{ narration: "You look around.", actions: [] }]);
+    const makeDetector = () =>
+      new FakeDetector([
+        { move: null, advancedBeats: [], advancedCharacterBeats: [], triggeredInteractions: [] },
+      ]);
+    const { lastFrame, stdin, unmount } = mount(
+      model,
+      () => model,
+      undefined,
+      undefined,
+      makeDetector,
+    );
+
+    await type(stdin, "/timing on");
+    await type(stdin, "look");
+
+    await expect.poll(() => lastFrame()).toContain("detector -");
+    unmount();
+  });
+
+  it("keeps showing the last successful turn's timing after a failed turn", async () => {
+    let calls = 0;
+    const model: NarratorModel = {
+      async generate() {
+        calls++;
+        if (calls === 1) return { narration: "You look around.", actions: [] };
+        throw new Error("boom");
+      },
+    };
+    const { lastFrame, stdin, unmount } = mount(model);
+
+    await type(stdin, "/timing on");
+    await type(stdin, "look");
+    await expect.poll(() => lastFrame()).toContain("You look around.");
+    expect(lastFrame()).toMatch(/Turn \d/);
+
+    await type(stdin, "push rock");
+    await expect.poll(() => lastFrame()).toContain("boom");
+    expect(lastFrame()).toMatch(/Turn \d/); // timing line persists through the failed turn
     unmount();
   });
 });

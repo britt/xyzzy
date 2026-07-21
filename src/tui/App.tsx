@@ -78,6 +78,23 @@ type Line = { key: number; role: "player" | "narrator" | "system"; text: string 
 /** A completed turn's timing breakdown: `TurnTiming` plus the measured wall-clock total. */
 type Timing = TurnTiming & { totalMs: number };
 
+/** Render a millisecond duration as "1 second" (singular, whole seconds) or
+ * "N.N seconds" (one decimal place) otherwise. */
+export function formatDuration(ms: number): string {
+  const seconds = Math.round(ms) / 1000;
+  const rounded = Math.round(seconds * 10) / 10;
+  return rounded === 1 ? "1 second" : `${rounded.toFixed(1)} seconds`;
+}
+
+/** e.g. "Turn 2.5 seconds (detector - 1 second, narrator - 1.5 seconds)". */
+export function formatTimingLine(timing: Timing): string {
+  const parts = [`narrator - ${formatDuration(timing.narratorMs)}`];
+  if (timing.detectorCalls > 0) {
+    parts.unshift(`detector - ${formatDuration(timing.detectorMs ?? 0)}`);
+  }
+  return `Turn ${formatDuration(timing.totalMs)} (${parts.join(", ")})`;
+}
+
 /** One-line, human-readable summary of a provider config. */
 function describeProvider(config: ProviderConfig): string {
   const key = config.apiKeyEnv ? ` · key $${config.apiKeyEnv}` : "";
@@ -400,6 +417,12 @@ export function App({
           {state.turn}
         </Text>
       </Box>
+
+      {timingEnabled && lastTiming && (
+        <Box>
+          <Text dimColor>{formatTimingLine(lastTiming)}</Text>
+        </Box>
+      )}
 
       {error && (
         <Box>
