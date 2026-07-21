@@ -1,9 +1,9 @@
-import { Action } from "../world/actions.js";
+import { Action, DETECTION_OWNED_ACTIONS } from "../world/actions.js";
 import type { Adventure, GameState, Room } from "../world/schema.js";
 import type { NarratorContext, NarratorModel } from "../llm/NarratorModel.js";
 import type { Detector } from "../llm/Detector.js";
 import { buildDetectionContext } from "../llm/detection.js";
-import { buildDigest, isBeatAdvanced } from "./digest.js";
+import { buildDigest, isBeatAdvanced, isCharacterBeatAdvanced, isInteractionExhausted } from "./digest.js";
 import { reduceAll } from "./reducer.js";
 import { appendMessage, windowTranscript } from "./transcript.js";
 import { describeError, log } from "../util/log.js";
@@ -74,6 +74,10 @@ export function canonicalizeAction(
       return { ...action, charId: resolveRef(chars, action.charId) };
     case "appendCharacterHistory":
       return { ...action, charId: resolveRef(chars, action.charId) };
+    case "advanceCharacterBeat":
+      return { ...action, charId: resolveRef(chars, action.charId) };
+    case "triggerInteraction":
+      return { ...action, charId: resolveRef(chars, action.charId) };
     default:
       return action;
   }
@@ -113,12 +117,16 @@ export function processActions(
 }
 
 /**
- * Expand any `advanceBeat` into the beat's declared `effects` followed by the
- * advanceBeat itself, so a beat's state changes apply atomically alongside its
- * flag flip (see docs/data-model.md § StoryBeat). Effects are skipped when the
- * beat is already advanced, so re-advancing is idempotent and never re-runs
- * them. Non-beat actions, unknown beats, and effect-less beats pass through
- * unchanged. The model's own mutations still apply — effects are additive.
+ * Expand any `advanceBeat`, `advanceCharacterBeat`, or `triggerInteraction`
+ * into its declared `effects` followed by the action itself, so a beat's or
+ * interaction's state changes apply atomically alongside its flag flip / count
+ * bump (see docs/data-model.md § StoryBeat, § Character beats and
+ * interactions). Effects are skipped when a beat is already advanced, so
+ * re-advancing is idempotent and never re-runs them. A `triggerInteraction`
+ * past its limit is dropped entirely (no effects, no action) rather than
+ * re-applied. Non-beat-like actions, unknown beats/interactions, and
+ * effect-less beats pass through unchanged. The model's own mutations still
+ * apply — effects are additive.
  */
 export function expandBeatEffects(
   adventure: Adventure,
@@ -126,10 +134,28 @@ export function expandBeatEffects(
   actions: Action[],
 ): Action[] {
   return actions.flatMap((action) => {
-    if (action.type !== "advanceBeat") return [action];
-    if (isBeatAdvanced(state, action.beatId)) return [action];
-    const beat = adventure.beats?.find((b) => b.id === action.beatId);
-    return [...(beat?.effects ?? []), action];
+    if (action.type === "advanceBeat") {
+      if (isBeatAdvanced(state, action.beatId)) return [action];
+      const beat = adventure.beats?.find((b) => b.id === action.beatId);
+      return [...(beat?.effects ?? []), action];
+    }
+
+    if (action.type === "advanceCharacterBeat") {
+      if (isCharacterBeatAdvanced(state, action.charId, action.beatId)) return [action];
+      const char = adventure.entities?.characters?.find((c) => c.id === action.charId);
+      const beat = char?.beats?.find((b) => b.id === action.beatId);
+      return [...(beat?.effects ?? []), action];
+    }
+
+    if (action.type === "triggerInteraction") {
+      const char = adventure.entities?.characters?.find((c) => c.id === action.charId);
+      const interaction = char?.interactions?.find((i) => i.id === action.interactionId);
+      if (!interaction) return [action];
+      if (isInteractionExhausted(state, action.charId, interaction)) return [];
+      return [...(interaction.effects ?? []), action];
+    }
+
+    return [action];
   });
 }
 
@@ -259,6 +285,12 @@ export async function runTurn(
       for (const id of detection.advancedBeats) {
         detected.push({ type: "advanceBeat", beatId: id });
       }
+      for (const { charId, beatId } of detection.advancedCharacterBeats) {
+        detected.push({ type: "advanceCharacterBeat", charId, beatId });
+      }
+      for (const { charId, interactionId } of detection.triggeredInteractions) {
+        detected.push({ type: "triggerInteraction", charId, interactionId });
+      }
       const detectedActions = processActions(adventure, state, detected);
       midState = reduceAll(
         state,
@@ -293,7 +325,7 @@ export async function runTurn(
   // forfeited for this turn rather than handed back to the unreliable narration
   // path this feature exists to replace. Process the rest against `midState`.
   const excluded: ReadonlyArray<Action["type"]> = deps.detector
-    ? ["moveTo", "advanceBeat"]
+    ? DETECTION_OWNED_ACTIONS
     : [];
   const actions = processActions(adventure, midState, result.actions, excluded);
 
