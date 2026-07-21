@@ -58,6 +58,14 @@ export const ACTION_TOOLS: Record<ActionType, ActionToolDef> = {
     description: "Mark a story beat as advanced.",
     parameters: z.object({ beatId: z.string() }),
   },
+  advanceCharacterBeat: {
+    description: "Mark a character-scoped story beat as advanced.",
+    parameters: z.object({ charId: z.string(), beatId: z.string() }),
+  },
+  triggerInteraction: {
+    description: "Fire a repeatable character interaction.",
+    parameters: z.object({ charId: z.string(), interactionId: z.string() }),
+  },
 };
 
 /** All action tool names (= action types). */

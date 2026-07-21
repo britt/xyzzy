@@ -23,4 +23,9 @@ describe("action tools", () => {
     expect(toAction("moveTo", {})).toBeNull();
     expect(toAction("setFlag", { key: "k", value: { nested: 1 } })).toBeNull();
   });
+
+  it("has a tool definition for the character-scoped action types", () => {
+    expect(ACTION_TOOLS.advanceCharacterBeat).toBeDefined();
+    expect(ACTION_TOOLS.triggerInteraction).toBeDefined();
+  });
 });
