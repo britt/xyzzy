@@ -282,16 +282,6 @@ export function buildSystemPrompt(adventure: Adventure): string {
 }
 
 /**
- * Run one turn: build model context (system prompt + digest + windowed
- * transcript), call the model with zod-typed tools, fold the resulting
- * validated actions through the pure reducer, append to the transcript, and
- * return narration + next state.
- *
- * State is derived and returned only after actions validate, so a thrown model
- * error leaves the caller's state untouched (clean rollback, no corrupt save).
- * Invalid tool-call args are dropped before the reducer runs (defense-in-depth).
- */
-/**
  * Time one `model.generate()` attempt and log it immediately, regardless of
  * outcome — a call that throws is still worth knowing the duration of.
  */
@@ -314,6 +304,16 @@ async function timedGenerate(
   }
 }
 
+/**
+ * Run one turn: build model context (system prompt + digest + windowed
+ * transcript), call the model with zod-typed tools, fold the resulting
+ * validated actions through the pure reducer, append to the transcript, and
+ * return narration + next state.
+ *
+ * State is derived and returned only after actions validate, so a thrown model
+ * error leaves the caller's state untouched (clean rollback, no corrupt save).
+ * Invalid tool-call args are dropped before the reducer runs (defense-in-depth).
+ */
 export async function runTurn(
   deps: TurnDeps,
   state: GameState,
