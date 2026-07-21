@@ -741,3 +741,60 @@ describe("runTurn", () => {
     expect(narration).toContain("no obvious way out");
   });
 });
+
+describe("runTurn timing", () => {
+  it("times the narrator call and reports no detector when none is configured", async () => {
+    const model = new FakeNarratorModel([{ narration: "ok", actions: [] }]);
+    const { timing } = await runTurn(deps(model), newGameState(adventure, "c"), "look");
+    expect(timing.detectorMs).toBeNull();
+    expect(timing.detectorCalls).toBe(0);
+    expect(timing.narratorCalls).toBe(1);
+    expect(typeof timing.narratorMs).toBe("number");
+    expect(timing.narratorMs).toBeGreaterThanOrEqual(0);
+  });
+
+  it("times the detector call when one is configured", async () => {
+    const model = new FakeNarratorModel([{ narration: "ok", actions: [] }]);
+    const detector = new FakeDetector([
+      { move: null, advancedBeats: [], advancedCharacterBeats: [], triggeredInteractions: [] },
+    ]);
+    const { timing } = await runTurn(
+      { ...deps(model), detector },
+      newGameState(adventure, "c"),
+      "look",
+    );
+    expect(timing.detectorCalls).toBe(1);
+    expect(typeof timing.detectorMs).toBe("number");
+    expect(timing.detectorMs).toBeGreaterThanOrEqual(0);
+  });
+
+  it("still times a detector call that throws (turn degrades normally)", async () => {
+    const model = new FakeNarratorModel([{ narration: "ok", actions: [] }]);
+    const detector = { detect: () => Promise.reject(new Error("detector down")) };
+    const { timing, state } = await runTurn(
+      { ...deps(model), detector },
+      newGameState(adventure, "c"),
+      "look",
+    );
+    expect(timing.detectorCalls).toBe(1);
+    expect(typeof timing.detectorMs).toBe("number");
+    expect(state.location).toBe("start"); // degraded, unaffected by the throw
+  });
+
+  it("sums both narrator attempts when the empty-narration retry fires", async () => {
+    const model = new FakeNarratorModel([
+      { narration: "", actions: [] },
+      { narration: "second try", actions: [] },
+    ]);
+    const { timing } = await runTurn(deps(model), newGameState(adventure, "c"), "look");
+    expect(timing.narratorCalls).toBe(2);
+    expect(typeof timing.narratorMs).toBe("number");
+  });
+
+  it("propagates a narrator error after timing that attempt", async () => {
+    const model = { generate: () => Promise.reject(new Error("boom")) };
+    await expect(
+      runTurn(deps(model), newGameState(adventure, "c"), "look"),
+    ).rejects.toThrow("boom");
+  });
+});

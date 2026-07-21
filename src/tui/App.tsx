@@ -5,7 +5,7 @@ import type { Adventure, GameState } from "../world/schema.js";
 import type { NarratorModel } from "../llm/NarratorModel.js";
 import type { Detector } from "../llm/Detector.js";
 import type { ProviderConfig } from "../config/schema.js";
-import { runTurn } from "../engine/turnLoop.js";
+import { runTurn, type TurnTiming } from "../engine/turnLoop.js";
 import { loadGame, saveGame } from "../engine/save.js";
 import { buildMap } from "../engine/asciiMap.js";
 import { PromptInput } from "./PromptInput.js";
@@ -75,6 +75,26 @@ function buildDetector(
 
 type Line = { key: number; role: "player" | "narrator" | "system"; text: string };
 
+/** A completed turn's timing breakdown: `TurnTiming` plus the measured wall-clock total. */
+type Timing = TurnTiming & { totalMs: number };
+
+/** Render a millisecond duration as "1 second" (singular, whole seconds) or
+ * "N.N seconds" (one decimal place) otherwise. */
+export function formatDuration(ms: number): string {
+  const seconds = Math.round(ms) / 1000;
+  const rounded = Math.round(seconds * 10) / 10;
+  return rounded === 1 ? "1 second" : `${rounded.toFixed(1)} seconds`;
+}
+
+/** e.g. "Turn 2.5 seconds (detector - 1 second, narrator - 1.5 seconds)". */
+export function formatTimingLine(timing: Timing): string {
+  const parts = [`narrator - ${formatDuration(timing.narratorMs)}`];
+  if (timing.detectorCalls > 0) {
+    parts.unshift(`detector - ${formatDuration(timing.detectorMs ?? 0)}`);
+  }
+  return `Turn ${formatDuration(timing.totalMs)} (${parts.join(", ")})`;
+}
+
 /** One-line, human-readable summary of a provider config. */
 function describeProvider(config: ProviderConfig): string {
   const key = config.apiKeyEnv ? ` · key $${config.apiKeyEnv}` : "";
@@ -94,6 +114,7 @@ const HELP = [
   "/state              dump the current game state (transcript elided)",
   "/transcript         print the full conversation transcript",
   "/log                show the log file path",
+  "/timing [on|off]    toggle turn/LLM-call timing display",
   "/help               show this help",
   "/quit               exit",
 ].join("\n");
@@ -150,6 +171,8 @@ export function App({
   // Command history for the input line (bash-style Up/Down recall lives in
   // PromptInput; this is just the recorded list).
   const [history, setHistory] = useState<string[]>([]);
+  const [timingEnabled, setTimingEnabled] = useState(false);
+  const [lastTiming, setLastTiming] = useState<Timing | null>(null);
 
   function push(role: Line["role"], text: string) {
     setLines((prev) => [...prev, { key: prev.length, role, text }]);
@@ -205,6 +228,12 @@ export function App({
       case "/log":
         push("system", `Log file: ${logPath()}`);
         return true;
+      case "/timing": {
+        const next = arg === "on" ? true : arg === "off" ? false : !timingEnabled;
+        setTimingEnabled(next);
+        push("system", `Timing display ${next ? "on" : "off"}.`);
+        return true;
+      }
       case "/model": {
         if (!arg) {
           push("system", `LLM: ${describeProvider(provider)}`);
@@ -331,14 +360,29 @@ export function App({
 
     push("player", `> ${value}`);
     setBusy(true);
+    const turnStart = Date.now();
+    const attemptedTurn = state.turn + 1;
     try {
       const result = await runTurn({ adventure, model, detector }, state, value);
+      const totalMs = Date.now() - turnStart;
       setState(result.state);
+      setLastTiming({ ...result.timing, totalMs });
+      log.info("turn timing", {
+        turn: attemptedTurn,
+        totalMs,
+        ...result.timing,
+        ok: true,
+      });
       push("narrator", result.narration);
       await saveGame(adventureDir, saveSlot, result.state);
     } catch (err) {
       // Turn rolled back: state is unchanged. Log full provider detail
       // (statusCode, responseBody, cause) to disk; show a concise line here.
+      log.info("turn timing", {
+        turn: attemptedTurn,
+        totalMs: Date.now() - turnStart,
+        ok: false,
+      });
       log.error(`turn failed: ${value}`, err);
       setError(`${userMessage(err)} · details in ${logPath()}`);
     } finally {
@@ -373,6 +417,12 @@ export function App({
           {state.turn}
         </Text>
       </Box>
+
+      {timingEnabled && lastTiming && (
+        <Box>
+          <Text dimColor>{formatTimingLine(lastTiming)}</Text>
+        </Box>
+      )}
 
       {error && (
         <Box>
