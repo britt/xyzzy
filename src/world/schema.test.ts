@@ -68,6 +68,69 @@ describe("Adventure schema", () => {
     expect(parsed.entities?.characters?.[0]?.history).toEqual([]);
     expect(parsed.entities?.characters?.[0]?.state).toEqual({});
   });
+
+  it("accepts a character with beats and interactions", () => {
+    const parsed = Adventure.parse({
+      meta: { id: "a", title: "A", version: "1" },
+      premise: "p",
+      start: {},
+      entities: {
+        characters: [
+          {
+            id: "barkeep",
+            name: "Barkeep",
+            persona: "gruff",
+            beats: [{ id: "confess", description: "Admits he watered the ale." }],
+            interactions: [
+              {
+                id: "offer-drink",
+                description: "Offers a free drink.",
+                limit: 3,
+              },
+            ],
+          },
+        ],
+      },
+    });
+    const barkeep = parsed.entities?.characters?.[0];
+    expect(barkeep?.beats?.[0]?.id).toBe("confess");
+    expect(barkeep?.interactions?.[0]).toMatchObject({
+      id: "offer-drink",
+      limit: 3,
+    });
+  });
+
+  it("defaults a character's beats and interactions to undefined when omitted", () => {
+    const parsed = Adventure.parse({
+      meta: { id: "a", title: "A", version: "1" },
+      premise: "p",
+      start: {},
+      entities: {
+        characters: [{ id: "g", name: "Guard", persona: "gruff" }],
+      },
+    });
+    expect(parsed.entities?.characters?.[0]?.beats).toBeUndefined();
+    expect(parsed.entities?.characters?.[0]?.interactions).toBeUndefined();
+  });
+
+  it("rejects an interaction with a non-positive limit", () => {
+    const result = Adventure.safeParse({
+      meta: { id: "a", title: "A", version: "1" },
+      premise: "p",
+      start: {},
+      entities: {
+        characters: [
+          {
+            id: "g",
+            name: "Guard",
+            persona: "gruff",
+            interactions: [{ id: "x", description: "d", limit: 0 }],
+          },
+        ],
+      },
+    });
+    expect(result.success).toBe(false);
+  });
 });
 
 describe("Action schema", () => {
