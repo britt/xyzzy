@@ -243,6 +243,8 @@ the reducer runs, so state can never enter an invalid shape.
 | `AppendCharacterHistory(charId, summary)`| Append a summary to a character's `history`.       |
 | `MoveCharacter(charId, room)`            | Move a character to a room.                        |
 | `AdvanceBeat(beatId)`                    | Mark a story beat as advanced.                     |
+| `AdvanceCharacterBeat(charId, beatId)`   | Mirrors `AdvanceBeat`, scoped to one character's own beat. |
+| `TriggerInteraction(charId, interactionId)` | Fire a repeatable character interaction (see § Character beats and interactions). |
 
 ---
 
@@ -255,10 +257,14 @@ A turn runs in two phases: **detect → apply → narrate.**
    triggers), and returns `{ move, advancedBeats }` — constrained to a per-turn
    closed-set schema so it can only name a real exit direction or a real beat
    id. The engine turns these into `MoveTo`/`AdvanceBeat` actions and applies
-   them (running any beat `effects`) before narration.
+   them (running any beat `effects`) before narration. The same pre-pass also
+   detects and owns character-scoped beats and interactions (`advancedCharacterBeats`,
+   `triggeredInteractions` → `AdvanceCharacterBeat`/`TriggerInteraction`); see
+   § Character beats and interactions for the full story.
 2. **Narrate.** The narration model then writes prose against the already-updated
    state. It keeps the item/flag/character actions above but is **not** offered
-   `MoveTo` or `AdvanceBeat` — those are owned by detection.
+   `MoveTo`, `AdvanceBeat`, `AdvanceCharacterBeat`, or `TriggerInteraction` —
+   those are all owned by detection.
 
 Movement and beat advancement therefore do not depend on the narration model
 emitting a tool call, which the local models used here do unreliably. If
