@@ -245,6 +245,19 @@ describe("expandBeatEffects", () => {
       ]),
     ).toEqual([]);
   });
+
+  it("only applies a limit:1 interaction once when the same trigger appears twice in one batch", () => {
+    const state = newGameState(withCharacterBeats, "c");
+    const trigger = {
+      type: "triggerInteraction" as const,
+      charId: "barkeep",
+      interactionId: "offer-drink",
+    };
+    expect(expandBeatEffects(withCharacterBeats, state, [trigger, trigger])).toEqual([
+      { type: "addItem", item: "ale" },
+      trigger,
+    ]);
+  });
 });
 
 describe("runTurn", () => {

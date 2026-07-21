@@ -116,6 +116,33 @@ export function processActions(
     });
 }
 
+/** Expand a single action into its declared `effects` (if any) followed by
+ * the action itself, checked against `state` as of just before this action. */
+function expandOne(adventure: Adventure, state: GameState, action: Action): Action[] {
+  if (action.type === "advanceBeat") {
+    if (isBeatAdvanced(state, action.beatId)) return [action];
+    const beat = adventure.beats?.find((b) => b.id === action.beatId);
+    return [...(beat?.effects ?? []), action];
+  }
+
+  if (action.type === "advanceCharacterBeat") {
+    if (isCharacterBeatAdvanced(state, action.charId, action.beatId)) return [action];
+    const char = adventure.entities?.characters?.find((c) => c.id === action.charId);
+    const beat = char?.beats?.find((b) => b.id === action.beatId);
+    return [...(beat?.effects ?? []), action];
+  }
+
+  if (action.type === "triggerInteraction") {
+    const char = adventure.entities?.characters?.find((c) => c.id === action.charId);
+    const interaction = char?.interactions?.find((i) => i.id === action.interactionId);
+    if (!interaction) return [action];
+    if (isInteractionExhausted(state, action.charId, interaction)) return [];
+    return [...(interaction.effects ?? []), action];
+  }
+
+  return [action];
+}
+
 /**
  * Expand any `advanceBeat`, `advanceCharacterBeat`, or `triggerInteraction`
  * into its declared `effects` followed by the action itself, so a beat's or
@@ -127,36 +154,26 @@ export function processActions(
  * re-applied. Non-beat-like actions, unknown beats/interactions, and
  * effect-less beats pass through unchanged. The model's own mutations still
  * apply — effects are additive.
+ *
+ * Each action is checked against a running state that folds in every prior
+ * action's expansion, not just the state at the start of the batch — so two
+ * occurrences of the same beat/interaction in one batch (e.g. a detector
+ * response with a duplicate token) can't both slip past an exhaustion check
+ * that was only ever true before either one ran.
  */
 export function expandBeatEffects(
   adventure: Adventure,
   state: GameState,
   actions: Action[],
 ): Action[] {
-  return actions.flatMap((action) => {
-    if (action.type === "advanceBeat") {
-      if (isBeatAdvanced(state, action.beatId)) return [action];
-      const beat = adventure.beats?.find((b) => b.id === action.beatId);
-      return [...(beat?.effects ?? []), action];
-    }
-
-    if (action.type === "advanceCharacterBeat") {
-      if (isCharacterBeatAdvanced(state, action.charId, action.beatId)) return [action];
-      const char = adventure.entities?.characters?.find((c) => c.id === action.charId);
-      const beat = char?.beats?.find((b) => b.id === action.beatId);
-      return [...(beat?.effects ?? []), action];
-    }
-
-    if (action.type === "triggerInteraction") {
-      const char = adventure.entities?.characters?.find((c) => c.id === action.charId);
-      const interaction = char?.interactions?.find((i) => i.id === action.interactionId);
-      if (!interaction) return [action];
-      if (isInteractionExhausted(state, action.charId, interaction)) return [];
-      return [...(interaction.effects ?? []), action];
-    }
-
-    return [action];
-  });
+  const result: Action[] = [];
+  let current = state;
+  for (const action of actions) {
+    const expanded = expandOne(adventure, current, action);
+    result.push(...expanded);
+    current = reduceAll(current, expanded);
+  }
+  return result;
 }
 
 export interface TurnResult {
