@@ -194,8 +194,10 @@ const DETECT_SYSTEM =
   "(with triggers), and any beats or interactions belonging to characters " +
   "currently in the scene (with triggers), decide which exit the player is " +
   "trying to take (or none), which beats' triggers the command now " +
-  "satisfies, and which character beats/interactions it triggers. Do not " +
-  "invent exits, beats, characters, or interactions.";
+  "satisfies, and which character beats/interactions it triggers. Character " +
+  "beats and interactions are listed as `character/id: trigger` — echo back " +
+  "the exact `character/id` token for any that fire. Do not invent exits, " +
+  "beats, characters, or interactions.";
 
 /**
  * Resolve a {@link ProviderConfig} to a structured {@link Detector}: one
