@@ -20,6 +20,14 @@ An adventure is authored as YAML content describing the world. Playing it create
 - **Build**: `bun build` (bundles CLI/library entry points) + `tsc` (type declarations), via `tsconfig.build.json`
 - **Key Libraries**: Ink (terminal UI), Vercel AI SDK (`ai`, `@ai-sdk/openai-compatible`) for model calls and tool-use, zod (schemas/validation), commander (CLI), yaml (adventure authoring format)
 
+## Git Practices
+
+- **Branching strategy**: Feature branches off `main`. Conductor manages worktree isolation per workspace, so no manual worktree setup is needed.
+- **Branch naming**: `<prefix>/<short-kebab-case-description>`
+  - `feature/` — new features
+  - `fix/` — bug fixes
+  - `chore/` — maintenance, tooling, dependency bumps, docs-only changes
+
 # Rules for Claude
 
 ## ABSOLUTE RULES - NO EXCEPTIONS
