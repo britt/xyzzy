@@ -2,7 +2,7 @@ import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { loadGame, SaveLoadError, saveExists, saveGame } from "./save.js";
+import { listSaves, loadGame, SaveLoadError, saveExists, saveGame } from "./save.js";
 import { newGameState } from "./state.js";
 import { savePath } from "./save.js";
 import type { Adventure } from "../world/schema.js";
@@ -48,5 +48,19 @@ describe("saveGame / loadGame", () => {
     await expect(loadGame(dir, "autosave")).rejects.toBeInstanceOf(
       SaveLoadError,
     );
+  });
+});
+
+describe("listSaves", () => {
+  it("returns an empty list when no saves directory exists", () => {
+    expect(listSaves(tmp())).toEqual([]);
+  });
+
+  it("lists save slot names, sorted", async () => {
+    const dir = tmp();
+    const state = newGameState(adventure, "now");
+    await saveGame(dir, "autosave", state);
+    await saveGame(dir, "before-boss", state);
+    expect(listSaves(dir)).toEqual(["autosave", "before-boss"]);
   });
 });
