@@ -9,3 +9,13 @@ Existing AI-narrated interactive fiction tools either rely on raw chat history (
 ### Approach
 
 An adventure is authored as YAML content describing the world. Playing it creates a schema-validated game state (location, inventory, flags, per-character data) that a turn loop keeps in sync: the model narrates and emits typed tool-call actions, which are validated and folded into state through a pure reducer, then autosaved. State lives outside the chat history, so games are saveable, resumable, and testable independent of context window limits.
+
+## Tech Stack
+
+- **Language**: TypeScript (ESM), Node.js >=20
+- **Deployment target**: CLI tool (`xyzzy` bin), published to npm as `@britt/xyzzy`, runs entirely on the user's machine
+- **Package Manager**: bun (bun.lock)
+- **Testing**: Vitest
+- **Linting**: ESLint + Prettier
+- **Build**: `bun build` (bundles CLI/library entry points) + `tsc` (type declarations), via `tsconfig.build.json`
+- **Key Libraries**: Ink (terminal UI), Vercel AI SDK (`ai`, `@ai-sdk/openai-compatible`) for model calls and tool-use, zod (schemas/validation), commander (CLI), yaml (adventure authoring format)
