@@ -379,7 +379,9 @@ describe("runTurn", () => {
 
   it("moves the player when detection returns a direction", async () => {
     const model = new FakeNarratorModel([{ narration: "You go.", actions: [] }]);
-    const detector = new FakeDetector([{ move: "north", advancedBeats: [] }]);
+    const detector = new FakeDetector([
+      { move: "north", advancedBeats: [], advancedCharacterBeats: [], triggeredInteractions: [] },
+    ]);
     const { state } = await runTurn(
       { ...deps(model), detector },
       newGameState(adventure, "c"), // at "start", north -> hall
@@ -403,7 +405,9 @@ describe("runTurn", () => {
       ],
     };
     const model = new FakeNarratorModel([{ narration: "ok", actions: [] }]);
-    const detector = new FakeDetector([{ move: null, advancedBeats: ["claim"] }]);
+    const detector = new FakeDetector([
+      { move: null, advancedBeats: ["claim"], advancedCharacterBeats: [], triggeredInteractions: [] },
+    ]);
     const { state } = await runTurn(
       { adventure: gem, model, detector, clock: () => "t" },
       newGameState(gem, "c"),
@@ -430,7 +434,9 @@ describe("runTurn", () => {
     const model = new FakeNarratorModel([
       { narration: "You go.", actions: [{ type: "moveTo", room: "hall" }] },
     ]);
-    const detector = new FakeDetector([{ move: null, advancedBeats: [] }]);
+    const detector = new FakeDetector([
+      { move: null, advancedBeats: [], advancedCharacterBeats: [], triggeredInteractions: [] },
+    ]);
     const { state } = await runTurn(
       { ...deps(model), detector },
       newGameState(adventure, "c"),
@@ -441,7 +447,9 @@ describe("runTurn", () => {
 
   it("narrates against the post-move room (new exits footer)", async () => {
     const model = new FakeNarratorModel([{ narration: "You arrive.", actions: [] }]);
-    const detector = new FakeDetector([{ move: "north", advancedBeats: [] }]);
+    const detector = new FakeDetector([
+      { move: "north", advancedBeats: [], advancedCharacterBeats: [], triggeredInteractions: [] },
+    ]);
     const { narration } = await runTurn(
       { ...deps(model), detector },
       newGameState(adventure, "c"),
