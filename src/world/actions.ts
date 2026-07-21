@@ -60,6 +60,18 @@ export const AdvanceBeat = z.object({
   beatId: z.string(),
 });
 
+export const AdvanceCharacterBeat = z.object({
+  type: z.literal("advanceCharacterBeat"),
+  charId: z.string(),
+  beatId: z.string(),
+});
+
+export const TriggerInteraction = z.object({
+  type: z.literal("triggerInteraction"),
+  charId: z.string(),
+  interactionId: z.string(),
+});
+
 export const Action = z.discriminatedUnion("type", [
   MoveTo,
   AddItem,
@@ -70,7 +82,22 @@ export const Action = z.discriminatedUnion("type", [
   AppendCharacterHistory,
   MoveCharacter,
   AdvanceBeat,
+  AdvanceCharacterBeat,
+  TriggerInteraction,
 ]);
 
 export type Action = z.infer<typeof Action>;
 export type ActionType = Action["type"];
+
+/**
+ * Action types the detection pre-pass decides and applies before narration —
+ * never offered to the narration model as a tool. Shared by `llm/registry.ts`
+ * (which filters narration tools) and `engine/turnLoop.ts` (which filters
+ * narration-model output) so the two can't drift out of sync.
+ */
+export const DETECTION_OWNED_ACTIONS: readonly ActionType[] = [
+  "moveTo",
+  "advanceBeat",
+  "advanceCharacterBeat",
+  "triggerInteraction",
+];

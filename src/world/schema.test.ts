@@ -152,4 +152,21 @@ describe("Action schema", () => {
         .success,
     ).toBe(false);
   });
+
+  it("validates advanceCharacterBeat and triggerInteraction", () => {
+    expect(
+      Action.safeParse({
+        type: "advanceCharacterBeat",
+        charId: "barkeep",
+        beatId: "confess",
+      }).success,
+    ).toBe(true);
+    expect(
+      Action.safeParse({
+        type: "triggerInteraction",
+        charId: "barkeep",
+        interactionId: "offer-drink",
+      }).success,
+    ).toBe(true);
+  });
 });
