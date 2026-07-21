@@ -132,6 +132,42 @@ consequences can never be half-applied. Effects run once: re-advancing an
 already-advanced beat is a no-op. They are additive — the model may still emit
 its own mutations in the same turn.
 
+### Character beats and interactions
+
+`Character` entities may declare their own `beats` and `interactions` —
+narrative moments scoped to that character instead of the whole adventure.
+
+| Field          | Type            | Required | Description                                                              |
+| -------------- | --------------- | -------- | ------------------------------------------------------------------------ |
+| `beats`        | `StoryBeat[]`   | no       | Character-scoped beats. Each fires at most once, like a top-level beat.  |
+| `interactions` | `Interaction[]` | no       | Repeatable beats. `Interaction` is `StoryBeat` plus an optional `limit`. |
+
+A beat or interaction id only needs to be unique within its own character's
+`beats`/`interactions` list — two different characters (or a character and
+the top-level `beats` list) may reuse the same id without colliding.
+
+**Scoping.** A character's beats and interactions are only candidates for
+advancement while that character is present in the player's current room.
+They never fire off-screen.
+
+**Triggering.** Exactly like top-level beats, the detection pre-pass — not
+the narration model — decides when a character beat advances
+(`advanceCharacterBeat`) or an interaction fires (`triggerInteraction`).
+Effects apply atomically with the advancement, the same way top-level beat
+effects do.
+
+**Tracking.** Progress reuses the flag convention top-level beats already
+use, scoped into the character's own state bag instead of the global one:
+
+- A fired beat sets `state.characters[charId].state["beat:<id>"] = "advanced"`.
+- A fired interaction increments
+  `state.characters[charId].state["interaction:<id>:count"]`.
+
+**Limits.** An `Interaction` with no `limit` can fire an unlimited number of
+times. Once a limit is reached, the interaction is dropped from detection
+candidates and any further `triggerInteraction` for it is a no-op — the
+count is never incremented past the limit and effects don't reapply.
+
 ---
 
 ## GameState
