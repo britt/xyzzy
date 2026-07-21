@@ -10,10 +10,28 @@ export interface DetectionBeat {
   trigger: string;
 }
 
+/** One active character beat visible to the detector: character + beat id + trigger. */
+export interface DetectionCharacterBeat {
+  charId: string;
+  beatId: string;
+  trigger: string;
+}
+
+/** One active character interaction visible to the detector. */
+export interface DetectionInteraction {
+  charId: string;
+  interactionId: string;
+  trigger: string;
+}
+
 export interface DetectionContext {
   input: string;
   exits: DetectionExit[];
   activeBeats: DetectionBeat[];
+  /** Beats belonging to characters present in the current room. */
+  characterBeats: DetectionCharacterBeat[];
+  /** Interactions belonging to characters present in the current room. */
+  interactions: DetectionInteraction[];
 }
 
 /** The structured facts a detection extracts from the player's input. */
@@ -22,6 +40,10 @@ export interface Detection {
   move: string | null;
   /** ids of active beats whose triggers the input now satisfies */
   advancedBeats: string[];
+  /** character beats whose triggers the input now satisfies */
+  advancedCharacterBeats: { charId: string; beatId: string }[];
+  /** character interactions whose triggers the input now satisfies */
+  triggeredInteractions: { charId: string; interactionId: string }[];
 }
 
 export interface Detector {
@@ -43,7 +65,12 @@ export class FakeDetector implements Detector {
     const next =
       this.queue[this.index] ??
       this.queue[this.queue.length - 1] ??
-      ({ move: null, advancedBeats: [] } satisfies Detection);
+      ({
+        move: null,
+        advancedBeats: [],
+        advancedCharacterBeats: [],
+        triggeredInteractions: [],
+      } satisfies Detection);
     if (this.index < this.queue.length) this.index++;
     return next;
   }
