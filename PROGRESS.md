@@ -39,3 +39,30 @@
 - Notes: No changes needed to bundling/splitting/exec-bits/shebang — those
   were all already correct; the bug was purely the entry-point
   self-invocation guard.
+
+## Task: Fail closed on a broken bin symlink instead of crashing - COMPLETE
+
+- Started: 2026-07-22 10:47 PDT
+- Root cause: code review flagged that `cli/index.ts` called
+  `realpathSync(process.argv[1])` unconditionally at module load. A dangling
+  npm global `bin` symlink (left behind by a partial install/uninstall) makes
+  `realpathSync` throw, so the CLI would now crash with a raw Node stack trace
+  at load time instead of the old silent no-op — a new, uncaught failure mode
+  introduced by the previous fix.
+- Tests: RED — added `src/cli/safeRealpath.test.ts` (3 cases against real
+  temp files/dirs, no mocks: realpath of an existing file, undefined for a
+  missing path, undefined for a broken symlink) against a not-yet-existing
+  `safeRealpath.ts`; confirmed failure (module not found). GREEN —
+  implemented `src/cli/safeRealpath.ts` wrapping `realpathSync` in
+  try/catch, returning `undefined` on failure. Wired into `cli/index.ts` in
+  place of the bare `realpathSync` call, so a resolution failure now fails
+  closed (`main()` doesn't run) rather than throwing. Full suite: 232 passed,
+  1 todo, 0 failing.
+- Coverage: `safeRealpath.ts` 100% lines/branches/funcs/statements. Overall
+  repo unchanged: Stmts 89.97%, Branch 85.28%, Funcs 93.27%, Lines 89.97%.
+- Build: Successful (`bun run build`)
+- Linting: Clean (`bun run lint`), typecheck clean (`bun run typecheck`)
+- End-to-end verification: re-ran the Scenario 6 pack/install round-trip
+  (`npm pack` → `npm install -g --prefix <scratch>` → `--help` and
+  `validate`) to confirm the happy path still works after this change.
+- Completed: 2026-07-22 10:52 PDT

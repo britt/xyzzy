@@ -1,8 +1,8 @@
 #!/usr/bin/env node
-import { realpathSync } from "node:fs";
 import { Command } from "commander";
 import { log } from "../util/log.js";
 import { isMainModule } from "./isMainModule.js";
+import { safeRealpath } from "./safeRealpath.js";
 import { play } from "./commands/play.js";
 import { newAdventure } from "./commands/new.js";
 import { validate } from "./commands/validate.js";
@@ -109,8 +109,13 @@ async function main(): Promise<void> {
 // process.argv[1] must be realpath-resolved because import.meta.url is
 // resolved through symlinks by Node, but argv[1] is not — npm's global
 // `bin` install is always a symlink, so without this the comparison never
-// matches and the installed CLI silently does nothing.
-if (process.argv[1] && isMainModule(import.meta.url, realpathSync(process.argv[1]))) {
+// matches and the installed CLI silently does nothing. safeRealpath returns
+// undefined (rather than throwing) for a dangling symlink so a broken
+// install fails closed instead of crashing on module load.
+const resolvedScriptPath = process.argv[1]
+  ? safeRealpath(process.argv[1])
+  : undefined;
+if (resolvedScriptPath && isMainModule(import.meta.url, resolvedScriptPath)) {
   main().catch((err) => {
     log.error("command failed", err);
     console.error(err instanceof Error ? err.message : err);
