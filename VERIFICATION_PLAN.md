@@ -7,7 +7,7 @@ These scenarios assume **no local LLM server is available**. They cover every CL
 ## Prerequisites
 
 - `bun install` has been run (dependencies present in `node_modules`).
-- Commands are run from the repo root via `bun run start -- <args>` (equivalent to the published `xyzzy` binary).
+- Commands are run from the repo root via `bun run start -- <args>`. Note this is **not** equivalent to the published `xyzzy` binary — `bun run start` runs `src/cli/index.ts` directly, while the published binary is invoked through npm's symlinked `bin` entry pointing at the built `dist/cli/index.js`. Scenario 6 exercises that packaged path specifically; a bug that only manifests through a symlinked entry point (as in the incident that added Scenario 6) will not show up in Scenarios 1-5.
 - The real example adventure at `examples/cave-of-echoes` is present and untouched — copy it to a scratch directory (e.g. under `/tmp`) rather than editing it in place or writing saves into it.
 - A scratch directory for throwaway output (adventures, configs, saves), cleaned up after each scenario.
 - Scenario 5 additionally requires a real interactive terminal (TTY), since Ink's input handling needs one.
@@ -107,6 +107,26 @@ These scenarios assume **no local LLM server is available**. They cover every CL
 - [ ] Step 8 exits the TUI cleanly back to the shell
 
 **If Blocked**: If no real TTY is available (e.g. a non-interactive sandboxed tool), stop and ask the developer to run this scenario, or note the limitation explicitly in the verification log. Do not substitute `ink-testing-library` and report it as this scenario passing — that's a unit test, not verification.
+
+### Scenario 6: Packaged global install actually executes (`npm pack` + `npm install -g`)
+
+**Context**: The published CLI is invoked through npm's `bin` symlink (`<prefix>/bin/xyzzy` → `<prefix>/lib/node_modules/@britt/xyzzy/dist/cli/index.js`), not by running the file directly. An entry-point self-invocation check that compares `import.meta.url` against an unresolved `process.argv[1]` (or any other logic sensitive to symlink vs. realpath) can pass every unit test and every `bun run start` check while still making the installed binary silently no-op — no error, no output, exit 0 — because none of those paths go through a symlink. This scenario is the only one in this plan that does.
+
+**Steps**:
+1. `bun run build`
+2. `mkdir -p /tmp/xyzzy-verify-pack/prefix && cd /tmp/xyzzy-verify-pack`
+3. `npm pack <repo-root>` (produces `britt-xyzzy-<version>.tgz`)
+4. `npm install -g --prefix ./prefix ./britt-xyzzy-<version>.tgz`
+5. `./prefix/bin/xyzzy --help`
+6. `./prefix/bin/xyzzy validate <repo-root>/examples/cave-of-echoes`
+7. `rm -rf /tmp/xyzzy-verify-pack`
+
+**Success Criteria**:
+- [ ] Step 5 prints the commander-generated usage/help text (not a silent, empty, exit-0 no-op)
+- [ ] Step 6 prints `✓ .../adventure.yaml is valid` and exits 0
+- [ ] Neither step exits 0 with zero stdout/stderr
+
+**If Blocked**: If this fails, it's a real regression in how the CLI's entry point resolves its own invocation — do not paper over it by only checking `bun run start` or unit tests; both can stay green while this is broken.
 
 ## Verification Rules
 
