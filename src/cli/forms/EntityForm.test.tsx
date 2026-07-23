@@ -87,4 +87,15 @@ describe("EntityForm", () => {
     expect(onDone).toHaveBeenCalledWith({});
     expect(lastFrame()).toBeFalsy();
   });
+
+  it("calls onDone only once for an empty fields array, even if re-rendered with fresh prop identities", async () => {
+    const onDone = vi.fn();
+    const { rerender } = render(<EntityForm fields={[]} onDone={onDone} />);
+    await tick();
+    rerender(<EntityForm fields={[]} onDone={(a) => onDone(a)} />);
+    await tick();
+    rerender(<EntityForm fields={[]} onDone={(a) => onDone(a)} />);
+    await tick();
+    expect(onDone).toHaveBeenCalledTimes(1);
+  });
 });

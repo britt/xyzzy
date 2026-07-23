@@ -26,10 +26,13 @@ export function EntityForm({ fields, onDone }: EntityFormProps) {
   const field = fields[index];
   const [value, setValue] = useState(field?.defaultValue ?? "");
 
-  // Only ever relevant on mount, for the empty-fields case.
+  // Mount-once: fires only for the empty-fields case, exactly once,
+  // regardless of whether the parent re-renders with fresh `fields`/`onDone`
+  // identities (an empty dependency array intentionally ignores changes to
+  // either after mount — this isn't a stale-closure bug, it's the point).
   useEffect(() => {
     if (fields.length === 0) onDone({});
-  }, [fields, onDone]);
+  }, []);
 
   if (!field) return null;
 
