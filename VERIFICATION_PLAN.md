@@ -134,14 +134,14 @@ These scenarios assume **no local LLM server is available**. They cover every CL
 
 ### Scenario 7: Non-interactive entity creation (`xyzzy new room|item|character|beat`)
 
-**Context**: `src/cli/commands/newEntity.ts` and its CLI wiring in `src/cli/index.ts` don't exist yet (see `IMPLEMENTATION_PLAN.md`), so this scenario is expected to FAIL until Tasks 1–7 are implemented. It exercises the flag-driven, non-interactive path — no TTY required — including the placeholder-comment behavior, id-collision refusal, and overwrite refusal, and confirms the written files integrate cleanly with `validate`.
+**Context**: `src/cli/commands/newEntity.ts` and its CLI wiring in `src/cli/index.ts` don't exist yet (see `IMPLEMENTATION_PLAN.md`), so this scenario is expected to FAIL until Tasks 1–7 are implemented. It exercises the flag-driven, non-interactive path — no TTY required — including the placeholder-comment behavior, id-collision refusal, and overwrite refusal, and confirms the written files integrate cleanly with `validate`. Note that `description` (room/item/beat) and `persona` (character) are *required* by the schema — skipping them is supported (they're commented placeholders like any other field) but leaves that entity failing `validate` until filled in, the same way `scaffoldAdventure`'s example files don't count until edited in. So this scenario only demonstrates the skip/placeholder mechanic on fields the schema actually marks optional (`location` on item, `trigger` on beat), keeping the final `validate` step green.
 
 **Steps**:
 1. Copy `examples/cave-of-echoes` to `/tmp/xyzzy-verify-entities`.
 2. `bun run start -- new room "Old Cistern" --adventure /tmp/xyzzy-verify-entities --description "A dank stone cistern, long since run dry." --non-interactive`
-3. `bun run start -- new item "Rusted Key" --adventure /tmp/xyzzy-verify-entities --non-interactive` (no `--description`/`--location`)
+3. `bun run start -- new item "Rusted Key" --adventure /tmp/xyzzy-verify-entities --description "A tarnished iron key, flecked with rust." --non-interactive` (no `--location`, which is optional)
 4. `bun run start -- new character "Old Hermit" --adventure /tmp/xyzzy-verify-entities --persona "A reclusive hermit who trusts no one." --location cavern --non-interactive`
-5. `bun run start -- new beat won-the-key --adventure /tmp/xyzzy-verify-entities --description "The player receives the rusted key." --non-interactive`
+5. `bun run start -- new beat won-the-key --adventure /tmp/xyzzy-verify-entities --description "The player receives the rusted key." --non-interactive` (no `--trigger`, which is optional)
 6. Re-run step 2 verbatim a second time.
 7. `bun run start -- new room "Cavern" --adventure /tmp/xyzzy-verify-entities --non-interactive` (slugifies to `cavern`, which already exists as a room id in `cave-of-echoes`)
 8. `bun run start -- validate /tmp/xyzzy-verify-entities`
@@ -149,7 +149,7 @@ These scenarios assume **no local LLM server is available**. They cover every CL
 
 **Success Criteria**:
 - [ ] Step 2 exits 0, prints a confirmation naming `rooms/old-cistern.yaml`, and that file contains `id: old-cistern`, `name: Old Cistern`, an uncommented `description:` line with the supplied text, and a commented `# exits:` placeholder block
-- [ ] Step 3 exits 0 and `items/rusted-key.yaml` has `id`/`name` set plainly but both `# description: <placeholder>` and `# location: <placeholder>` commented out
+- [ ] Step 3 exits 0 and `items/rusted-key.yaml` has `id`/`name`/`description` set plainly and `# location: <placeholder>` commented out
 - [ ] Step 4 exits 0 and `characters/old-hermit.yaml` has `persona` and `location: cavern` set plainly, with `# history: []`, `# state: {}`, and `# beats:` placeholders present
 - [ ] Step 5 exits 0 and `beats/won-the-key.yaml` has `id: won-the-key` (no `name` field at all), an uncommented `description:`, and a commented `# trigger:` and `# effects:` block
 - [ ] None of steps 2–5 hang or attempt to open a TTY/render the Ink form — they return promptly
