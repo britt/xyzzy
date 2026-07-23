@@ -156,3 +156,145 @@
   `Refusing to scaffold into ...: path already exists and is not a directory.`
   and exits 1, instead of a raw Node stack-trace-style error.
 - Completed: 2026-07-23 08:52 PDT
+
+## Task: `xyzzy new room|item|character|beat` entity subcommands - COMPLETE
+
+- Started: 2026-07-23 (see `IMPLEMENTATION_PLAN.md`)
+- Scope: adds `xyzzy new room|item|character|beat` alongside the existing
+  `xyzzy new <name>` adventure scaffold. Each writes a new entity file into
+  the adventure's conventional `<kind>s/` directory, with every field besides
+  the name/id (`--description`, `--location`, `--persona`, `--trigger`)
+  suppliable via flag, prompted interactively via an Ink form when in a real
+  terminal, or left as a commented placeholder when skipped or run
+  non-interactively.
+- Tasks 1–9 followed strict RED→GREEN TDD, one commit per task:
+  1. `src/util/slug.ts` — `slugify()`, 5 cases.
+  2. `src/world/entityWriter.ts` — `ENTITY_FIELDS` + pure `renderEntityYaml`
+     (all-supplied/all-skipped/mixed per kind), 9 cases.
+  3. `entityWriter.ts` additive — `entityFilePath` (pluralized per-kind path)
+     + `findEntityIdConflict` (reuses `loader.readAdventureFile` rather than
+     re-scanning directories), 5 cases.
+  4. `entityWriter.ts` additive — `writeEntityFile` (mkdir -p, refuse
+     overwrite, refuse id conflict, refuse missing `adventure.yaml`, happy
+     path all 4 kinds), 5 cases.
+  5. `src/cli/forms/EntityForm.tsx` — sequential one-field-at-a-time Ink
+     prompt (`ink-text-input`), skip-on-empty/no-default, accept-default-
+     as-is, full answers map on completion, immediate `onDone({})` for an
+     empty field list, 6 cases — all passed on first GREEN attempt.
+  6. `src/cli/commands/newEntity.ts` — orchestration: id/name resolution
+     (beat's positional is its `id` directly, no `name` field), flag values
+     vs. remaining fields, dynamic `import("ink")`/`import(EntityForm)` so
+     the interactive branch is never even loaded on the non-interactive
+     path, 5 cases — all passed on first GREEN attempt.
+  7. CLI wiring in `src/cli/index.ts` (excluded from coverage; verified
+     manually: `new --help`, `new room --help`, and an end-to-end
+     room/item/character/beat → validate → overwrite-refusal →
+     id-collision-refusal run against a scratch copy of
+     `examples/cave-of-echoes`).
+  8. Docs: extended README's "Create an adventure" section with an "Add
+     entities" subsection; added VERIFICATION_PLAN.md Scenario 7
+     (non-interactive, flag-driven) and Scenario 8 (interactive Ink form,
+     real TTY).
+  9. Final pass (this entry).
+- A follow-up test/GREEN cycle added an injectable `NewEntityDeps`
+  (`promptFields`, `isTTY`) to `newEntity()`, mirroring `new.ts`'s existing
+  `Prompter` injection pattern, so the interactive field-merging logic is
+  unit-testable without a real TTY. `promptRemainingFields` itself (the Ink
+  render glue) stays covered only by manual/e2e verification, the same
+  accepted convention as `new.ts`'s `stdinPrompter`.
+- Bug caught via manual end-to-end verification (not a regression in
+  already-committed code, but in the verification plan I'd drafted before
+  implementing): `VERIFICATION_PLAN.md` Scenario 7 originally had the item
+  step skip both `--description` and `--location`, but `Item.description` is
+  required by the schema (only `location` is optional) — so the scenario's
+  own final `validate` step would have failed. Fixed by supplying
+  `--description` and skipping only the schema-optional `--location`,
+  consistent with beat's step already skipping only the optional `--trigger`.
+- Tests: 282 passing, 0 failing (up from 269 pre-feature).
+- Coverage: `slug.ts` 100/100/100/100. `entityWriter.ts` 97.31/88.57/100/97.31
+  (one uncovered defensive fallback branch in `findEntityIdConflict`).
+  `EntityForm.tsx` 100/100/100/100. `newEntity.ts` 71.21/87.5/50/71.21 — the
+  uncovered lines are entirely `promptRemainingFields`'s Ink-rendering body,
+  the same class of TTY-only glue `new.ts`'s `stdinPrompter` is exempted
+  from. Overall repo: Stmts 90.41%, Branch 86.09%, Funcs 94.2%, Lines
+  90.41% — meets the 90/85/90/90 thresholds.
+- Build: Successful (`bun run build`), including a smoke run of the built
+  `dist/cli/index.js` for `new --help`/`new room --help`.
+- Linting: Clean (`bun run lint`), typecheck clean (`bun run typecheck`).
+  (`bun run format:check` reports pre-existing repo-wide Prettier drift
+  unrelated to this change, consistent with the prior PR's note about
+  deliberately not running a blanket `prettier --write .`; not part of
+  CLAUDE.md's required `bun run lint` gate.)
+- End-to-end verification: ran the corrected Scenario 7 flow manually against
+  a scratch copy of `examples/cave-of-echoes` — room/item/character/beat
+  created, `validate` passes, re-running the same room command refuses to
+  overwrite (file byte-for-byte unchanged), and `new room "Cavern"` refuses
+  on the id collision with a message naming the existing room. Scenario 8
+  (interactive Ink form over a real TTY) documented but not run in this
+  non-interactive session — flagged for the developer to confirm.
+- Completed: 2026-07-23
+- Notes: merged `origin/main` mid-implementation (PR #19, the base `xyzzy
+  new <name>` scaffold implementation) with no conflicts; it doesn't touch
+  the `new` command's structure so Task 7's subcommand wiring applied
+  cleanly on top. Held off on a version bump — this repo bumps version as
+  its own separate commit once a feature is merged (see `#18` vs `#19` in
+  the git log), and that's a decision for whoever merges this branch.
+
+## Task: Code review fixes on entity subcommands (PR #20) - COMPLETE
+
+- Started: 2026-07-23
+- Scope: a manual code review of the entity-subcommands diff (no dedicated
+  review skill was invokable in this session, so reviewed by hand) surfaced
+  5 findings, verified by reproducing each before fixing. All 5 fixed with
+  RED tests first.
+- Finding 1 (security, path traversal): `entityFilePath` joined the
+  caller-supplied id straight into a filesystem path with no validation,
+  and beat's positional argument was used as the id with no `slugify` at
+  all. `--id "../../escaped"` (or `new beat "../../escaped-beat"`) wrote
+  files outside the adventure directory — reproduced on disk before the
+  fix. Fixed by `assertValidId` in `entityWriter.ts`, rejecting any id
+  containing `/`, `\`, or equal to `..`, before any fs access.
+- Finding 2 (error handling): pointing `--adventure` at `adventure.yaml`
+  itself (a form `resolveAdventureFile` already documents as valid input)
+  crashed with a raw `ENOTDIR: not a directory, mkdir '.../adventure.yaml/rooms'`
+  instead of a friendly message — the same bug class already fixed once for
+  `scaffoldAdventure`'s `assertDirIsWritable`, reintroduced here. Fixed by
+  `resolveAdventureDir`, normalizing to the containing directory via
+  `resolveAdventureFile` + `dirname` before building any path.
+- Finding 3 (correctness): an all-punctuation name (e.g. `"!!!"`) slugified
+  to an empty string with no fallback, silently writing `<kind>/.yaml`.
+  `scaffolder.ts`'s own local slugify already guards this exact case
+  (`slug || "adventure"`); `util/slug.ts` didn't. Fixed by the same
+  `assertValidId` as Finding 1 (empty-id check).
+- Finding 4 (correctness): `EntityForm`'s empty-fields `onDone({})` guard
+  depended on `[fields, onDone]`, so a re-render with fresh prop identities
+  re-fired it — verified via a rerender test showing 3 calls instead of 1,
+  violating the component's own "calls onDone once" contract. Not
+  triggered by the current sole caller, but a latent bug for any future
+  one. Fixed by switching to a true mount-once `useEffect(..., [])`.
+- Finding 5 (correctness, minor): `writeEntityFile` checked
+  `existsSync(path)` then wrote separately — a check-then-act race between
+  two concurrent invocations targeting the same id. Not independently
+  unit-testable (synchronous single-process code can't reproduce a
+  multi-process race), so covered by the existing overwrite-refusal test
+  continuing to pass. Fixed by using `writeFileSync(..., { flag: "wx" })`
+  and catching `EEXIST` for the friendly message, closing the gap
+  atomically at the OS level.
+- Tests: RED confirmed for all findings with a concrete reproduction
+  (findings 1/3/4 via new failing assertions; finding 2 via the file-path
+  test genuinely crashing with the raw ENOTDIR before the fix). GREEN:
+  287 tests passing (up from 282), 0 failing.
+- Coverage: `entityWriter.ts` 96.4/88.88/100/96.4, `EntityForm.tsx`
+  100/100/100/100. Overall repo: 90.47/86.38/94.24/90.47 (meets
+  90/85/90/90).
+- Build: Successful (`bun run build`). Linting: clean (`bun run lint`),
+  typecheck clean (`bun run typecheck`).
+- End-to-end verification: re-ran the three reproduction commands
+  (`--id "../../escaped"`, `new room "!!!"`, `--adventure .../adventure.yaml`)
+  against a scratch adventure — the first two now refuse cleanly with no
+  file written, the third now succeeds and writes into the correct sibling
+  directory instead of crashing.
+- Completed: 2026-07-23
+- Notes: a PR (#20) was opened for this branch from the Claude Code UI
+  before this task started; no new PR was created, these commits update
+  it directly.

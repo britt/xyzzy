@@ -72,6 +72,40 @@ then scaffolds a new adventure directory: a minimal valid `adventure.yaml`, a
 `saves/` folder, a README, and commented examples of a room, an item, a
 character, and a story beat so you can see the optional structure.
 
+#### Add entities
+
+```bash
+xyzzy new room "Old Cistern" --description "A dank stone cistern, long since run dry."
+xyzzy new item "Rusted Key" --location cavern
+xyzzy new character "Old Hermit" --persona "A reclusive hermit who trusts no one." --location cavern
+xyzzy new beat won-the-key --description "The player receives the rusted key."
+```
+
+Each writes a new file into the adventure's conventional directory
+(`rooms/old-cistern.yaml`, `items/rusted-key.yaml`, etc.), with `id` defaulted
+to a slug of the name (override with `--id`) — `beat`'s positional argument is
+its `id` directly, since beats have no `name` field. Every field besides the
+name/id can be supplied as a flag (`--description`, `--location`, `--persona`,
+`--trigger`) or left unset. Unset fields are prompted for interactively (skip
+any prompt with a bare Enter) when running in a real terminal; pass
+`--non-interactive`, or pipe/redirect stdin, to skip prompting entirely.
+Fields left unset — whether skipped at a prompt or never supplied at all — are
+written as commented placeholders you can fill in later:
+
+```yaml
+id: rusted-key
+name: Rusted Key
+description: A tarnished iron key, flecked with rust.
+# location: <room or character id where this item starts>
+```
+
+Note that `description` (room/item/beat) and `persona` (character) are
+required by the schema — skipping them is allowed, the same as any other
+field, but `xyzzy validate` will flag that entity until you fill it in.
+Refuses to overwrite an existing file, and refuses an `id` that collides with
+an entity the adventure already defines elsewhere. Use `--adventure <path>` to
+target an adventure directory other than the current one.
+
 ### Play
 
 ```bash
