@@ -66,3 +66,59 @@
   (`npm pack` → `npm install -g --prefix <scratch>` → `--help` and
   `validate`) to confirm the happy path still works after this change.
 - Completed: 2026-07-22 10:52 PDT
+
+## Task: Implement `xyzzy new` (scaffold command) - COMPLETE
+
+- Started: 2026-07-23 07:50 PDT
+- Scope: `src/world/scaffolder.ts` (`scaffoldAdventure`) and
+  `src/cli/commands/new.ts` (`newAdventure`) were both stubs
+  (`notImplemented`). `new <dir>` now scaffolds a minimal, schema-valid
+  adventure and interactively prompts for the game's title (defaults to the
+  directory name) and an optional premise (defaults to a placeholder string
+  when skipped).
+- Tests: RED first in both layers.
+  - `src/world/scaffolder.test.ts` (9 cases) written against the stub,
+    confirmed failing with `NotImplementedError` for the right reason.
+    GREEN — implemented `scaffoldAdventure`: writes `adventure.yaml` (`meta`,
+    `premise`, `start: {}`), a `README.md`, a `saves/` dir, and fully
+    commented-out `rooms/example.yaml`, `items/example.yaml`,
+    `characters/example.yaml`, `beats/example.yaml` (each parses to `null`,
+    so they contribute zero real entities — validated via
+    `readAdventureFile`/`validateAdventure`, no mocks). Refuses to overwrite
+    an existing non-empty directory; slugifies the directory's basename into
+    `meta.id` while the README's usage snippets reference the real directory
+    name (caught and fixed as its own RED→GREEN cycle after the first
+    implementation used the slug in both places).
+  - `src/cli/commands/new.test.ts` (3 cases) written against the stub,
+    confirmed failing the same way. GREEN — implemented `newAdventure` with
+    an injectable `Prompter` interface for testability; production path uses
+    `node:readline/promises`.
+  - Manual end-to-end check with piped stdin (`printf 'Title\nPremise\n' |
+    bun run start -- new ...`) surfaced a real bug: sequential
+    `rl.question()` calls race against pre-buffered piped input (both lines
+    already delivered before the second listener attaches, so it never
+    resolves) — reproduced with plain Node too, not bun-specific. Fixed by
+    pulling from `rl[Symbol.asyncIterator]()` one line at a time instead of
+    two independent `question()` calls; re-verified with both piped stdin and
+    a real `npm pack`/`npm install -g` packaged binary.
+  - Removed `src/world/roadmap.test.ts` (an `it.todo` placeholder for this
+    exact stub) now that real tests exist.
+- Coverage: `scaffolder.ts` 100% lines/funcs/statements, 92.3% branch (one
+  defensive fallback in `slugify` for an all-punctuation name, not
+  exercised). `new.ts` 87%/50%/50%/87% (the real-stdin `stdinPrompter` path
+  is exercised only manually/end-to-end, same convention as `play.ts`'s
+  TTY-only code, which VERIFICATION_PLAN documents as requiring a real
+  terminal). Overall repo: Stmts 90.5%, Branch 85.51%, Funcs 94.4%, Lines
+  90.5% — meets the 90/85/90/90 thresholds.
+- Build: Successful (`bun run build`)
+- Linting: Clean (`bun run lint`), typecheck clean (`bun run typecheck`)
+- End-to-end verification: `bun run start -- new <dir>` with piped answers
+  produces a valid adventure that `bun run start -- validate <dir>` accepts;
+  also re-ran the Scenario 6-style `npm pack` → `npm install -g --prefix
+  <scratch>` → packaged `xyzzy new` → packaged `xyzzy validate` round-trip
+  end to end. Scratch directories cleaned up.
+- Completed: 2026-07-23 08:05 PDT
+- Notes: Scenario 1 in `VERIFICATION_PLAN.md` currently documents `new` as an
+  expected-fail stub — worth a follow-up doc update, but out of scope for
+  this change since the instructions were to implement the command, not
+  rewrite the verification plan.

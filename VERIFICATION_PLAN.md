@@ -16,18 +16,21 @@ These scenarios assume **no local LLM server is available**. They cover every CL
 
 ### Scenario 1: Scaffold a new adventure (`xyzzy new`)
 
-**Context**: `src/cli/commands/new.ts` is currently a stub (`notImplemented()`), so this scenario is expected to FAIL until it's implemented. It documents the intended behavior from the README so the gap is caught the moment someone assumes it works.
+**Context**: `new` prompts interactively for the game's title (defaults to the target directory's name) and an optional premise (defaults to a placeholder when skipped), then scaffolds the adventure. The prompts work over piped stdin as well as a real TTY, so this scenario can run non-interactively.
 
 **Steps**:
-1. `bun run start -- new /tmp/xyzzy-verify-new`
+1. `printf 'Verify Adventure\nA premise for verification.\n' | bun run start -- new /tmp/xyzzy-verify-new`
+2. `bun run start -- validate /tmp/xyzzy-verify-new`
+3. Delete `/tmp/xyzzy-verify-new`.
 
 **Success Criteria**:
-- [ ] Command exits 0
-- [ ] `/tmp/xyzzy-verify-new/adventure.yaml` exists and is a minimal valid adventure
+- [ ] Step 1 exits 0 and prints `Scaffolded "Verify Adventure" in /tmp/xyzzy-verify-new`
+- [ ] `/tmp/xyzzy-verify-new/adventure.yaml` exists, with `meta.id: xyzzy-verify-new`, `meta.title: Verify Adventure`, and `premise: A premise for verification.`
 - [ ] `/tmp/xyzzy-verify-new/saves/` exists
-- [ ] A README and commented example room/character are present in the scaffold
+- [ ] A README and commented example room/item/character/beat files are present in the scaffold (`rooms/example.yaml`, `items/example.yaml`, `characters/example.yaml`, `beats/example.yaml`)
+- [ ] Step 2 exits 0 and prints `✓ .../adventure.yaml is valid`
 
-**If Blocked**: Expected to fail today (`notImplemented` error). Record it as a known gap, not a regression — do not attempt to implement `new` as part of running verification.
+**If Blocked**: If prompting hangs or an answer is dropped under piped stdin, that's a real regression in the prompt loop (`src/cli/commands/new.ts`) — report it, don't paper over it.
 
 ### Scenario 2: Validate a valid adventure
 
