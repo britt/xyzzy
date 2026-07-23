@@ -128,4 +128,14 @@ describe("scaffoldAdventure", () => {
       scaffoldAdventure({ dir, title: "Empty Dir Is Fine" }),
     ).resolves.not.toThrow();
   });
+
+  it("gives a friendly error when the target path is an existing file, not a directory", async () => {
+    const base = mkdtempSync(join(tmpdir(), "xyzzy-scaffold-"));
+    const filePath = join(base, "not-a-dir");
+    writeFileSync(filePath, "I am a file, not a directory", "utf8");
+
+    await expect(
+      scaffoldAdventure({ dir: filePath, title: "Whatever" }),
+    ).rejects.toThrow(/already exists and is not a directory/i);
+  });
 });

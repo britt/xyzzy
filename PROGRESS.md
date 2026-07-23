@@ -122,3 +122,37 @@
   expected-fail stub — worth a follow-up doc update, but out of scope for
   this change since the instructions were to implement the command, not
   rewrite the verification plan.
+
+## Task: Fix code review findings on PR #19 - COMPLETE
+
+- Started: 2026-07-23 08:45 PDT
+- Scope: two findings from a code review of PR #19 (`xyzzy new`).
+- Finding 1 (medium): `assertDirIsWritable` threw a raw `ENOTDIR` Node error
+  instead of the command's normal friendly message when the target path was
+  an existing file rather than a directory (e.g. a typo'd path). Reproduced
+  directly: `scaffoldAdventure({ dir: <path to a file>, title: "x" })` threw
+  `ENOTDIR: not a directory, scandir '...'`.
+  - Tests: RED — added a case to `src/world/scaffolder.test.ts` asserting a
+    friendly `/already exists and is not a directory/i` message; confirmed it
+    failed with the raw `ENOTDIR` message first. GREEN — `assertDirIsWritable`
+    now calls `statSync(dir).isDirectory()` and throws the same
+    `Refusing to scaffold into ...` style error used for the non-empty-dir
+    case before falling through to `readdirSync`. Full suite: 245 passed, 0
+    failing (was 244; net +1 test).
+- Finding 2 (low): root `README.md`'s "Create an adventure" section still
+  described the pre-implementation stub behavior — no mention of the
+  interactive title/premise prompts, and said "room and character" examples
+  when the scaffold also writes `items/` and `beats/` examples. Updated the
+  paragraph to describe both. (Prettier's default run reformatted unrelated
+  pre-existing lines elsewhere in the file — reverted that and hand-applied
+  just the intended paragraph edit to keep the diff scoped to this fix.)
+- Coverage: `scaffolder.ts` unchanged at 100% lines/funcs/statements; branch
+  coverage improved (the new `isDirectory()` check is exercised by the new
+  test). Overall repo thresholds still met.
+- Build: Successful (`bun run build`)
+- Linting: Clean (`bun run lint`), typecheck clean (`bun run typecheck`)
+- End-to-end verification: re-ran `xyzzy new` against a path pointing at an
+  existing plain file — now prints
+  `Refusing to scaffold into ...: path already exists and is not a directory.`
+  and exits 1, instead of a raw Node stack-trace-style error.
+- Completed: 2026-07-23 08:52 PDT

@@ -1,4 +1,10 @@
-import { existsSync, mkdirSync, readdirSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  statSync,
+  writeFileSync,
+} from "node:fs";
 import { basename, join, resolve } from "node:path";
 import { stringify } from "yaml";
 
@@ -28,6 +34,11 @@ function slugify(input: string): string {
 
 function assertDirIsWritable(dir: string): void {
   if (!existsSync(dir)) return;
+  if (!statSync(dir).isDirectory()) {
+    throw new Error(
+      `Refusing to scaffold into ${dir}: path already exists and is not a directory.`,
+    );
+  }
   if (readdirSync(dir).length > 0) {
     throw new Error(
       `Refusing to scaffold into ${dir}: directory already exists and is not empty.`,
