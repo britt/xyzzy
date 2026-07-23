@@ -1,6 +1,7 @@
-import { join } from "node:path";
+import { existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { dirname, join } from "node:path";
 import { stringify } from "yaml";
-import { readAdventureFile } from "./loader.js";
+import { readAdventureFile, resolveAdventureFile } from "./loader.js";
 
 export type EntityKind = "room" | "item" | "character" | "beat";
 
@@ -161,4 +162,49 @@ export function findEntityIdConflict(
 
   const label = kind === "beat" ? match.description : match.name;
   return typeof label === "string" ? label : `id "${id}"`;
+}
+
+function requireAdventureFile(adventureDir: string): void {
+  let adventureFile: string;
+  try {
+    adventureFile = resolveAdventureFile(adventureDir);
+  } catch {
+    throw new Error(
+      `No such adventure at ${adventureDir}. Run \`xyzzy new <name>\` first.`,
+    );
+  }
+  if (!existsSync(adventureFile)) {
+    throw new Error(
+      `No such adventure at ${adventureDir}. Run \`xyzzy new <name>\` first.`,
+    );
+  }
+}
+
+/**
+ * Write a new entity file into `adventureDir`'s conventional kind
+ * directory. Refuses to overwrite an existing file at the target path or to
+ * write an id that already conflicts with an entity the adventure already
+ * defines.
+ */
+export function writeEntityFile(
+  adventureDir: string,
+  input: EntityWriteInput,
+): { path: string } {
+  requireAdventureFile(adventureDir);
+
+  const path = entityFilePath(adventureDir, input.kind, input.id);
+  if (existsSync(path)) {
+    throw new Error(`File already exists, refusing to overwrite: ${path}`);
+  }
+
+  const conflict = findEntityIdConflict(adventureDir, input.kind, input.id);
+  if (conflict !== undefined) {
+    throw new Error(
+      `A ${input.kind} with id "${input.id}" already exists (${conflict}).`,
+    );
+  }
+
+  mkdirSync(dirname(path), { recursive: true });
+  writeFileSync(path, renderEntityYaml(input), "utf8");
+  return { path };
 }

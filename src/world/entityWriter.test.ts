@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -6,6 +6,7 @@ import {
   entityFilePath,
   findEntityIdConflict,
   renderEntityYaml,
+  writeEntityFile,
 } from "./entityWriter.js";
 
 const MINIMAL_ADVENTURE = `
@@ -253,5 +254,106 @@ describe("findEntityIdConflict", () => {
     );
     expect(findEntityIdConflict(dir, "beat", "find-light")).toBeDefined();
     expect(findEntityIdConflict(dir, "room", "find-light")).toBeUndefined();
+  });
+});
+
+describe("writeEntityFile", () => {
+  it("writes the file and creates the kind directory when it doesn't exist yet", () => {
+    const dir = tmp();
+    writeAdventure(dir);
+
+    const { path } = writeEntityFile(dir, {
+      kind: "room",
+      id: "lake",
+      name: "The Still Lake",
+      values: { description: "A black underground lake." },
+    });
+
+    expect(path).toBe(join(dir, "rooms", "lake.yaml"));
+    expect(readFileSync(path, "utf8")).toBe(
+      renderEntityYaml({
+        kind: "room",
+        id: "lake",
+        name: "The Still Lake",
+        values: { description: "A black underground lake." },
+      }),
+    );
+  });
+
+  it("refuses to overwrite an existing file, leaving it untouched", () => {
+    const dir = tmp();
+    writeAdventure(dir);
+    mkdirSync(join(dir, "rooms"));
+    writeFileSync(join(dir, "rooms", "lake.yaml"), "original content\n", "utf8");
+
+    expect(() =>
+      writeEntityFile(dir, {
+        kind: "room",
+        id: "lake",
+        name: "The Still Lake",
+        values: {},
+      }),
+    ).toThrow(/already exists/i);
+    expect(readFileSync(join(dir, "rooms", "lake.yaml"), "utf8")).toBe(
+      "original content\n",
+    );
+  });
+
+  it("refuses on an id conflict, without writing", () => {
+    const dir = tmp();
+    writeAdventure(dir);
+
+    expect(() =>
+      writeEntityFile(dir, {
+        kind: "room",
+        id: "cavern",
+        name: "Cavern Again",
+        values: {},
+      }),
+    ).toThrow(/cavern/i);
+    expect(existsSync(join(dir, "rooms", "cavern.yaml"))).toBe(false);
+  });
+
+  it("refuses with a clear message when adventureDir has no adventure.yaml", () => {
+    const dir = tmp();
+
+    expect(() =>
+      writeEntityFile(dir, {
+        kind: "room",
+        id: "lake",
+        name: "The Still Lake",
+        values: {},
+      }),
+    ).toThrow(/no such adventure/i);
+  });
+
+  it("writes an item, character, and beat", () => {
+    const dir = tmp();
+    writeAdventure(dir);
+
+    const item = writeEntityFile(dir, {
+      kind: "item",
+      id: "rusted-key",
+      name: "Rusted Key",
+      values: {},
+    });
+    expect(readFileSync(item.path, "utf8")).toContain("id: rusted-key");
+
+    const character = writeEntityFile(dir, {
+      kind: "character",
+      id: "old-hermit",
+      name: "Old Hermit",
+      values: { persona: "A reclusive hermit." },
+    });
+    expect(readFileSync(character.path, "utf8")).toContain(
+      "persona: A reclusive hermit.",
+    );
+
+    const beat = writeEntityFile(dir, {
+      kind: "beat",
+      id: "won-the-key",
+      values: { description: "The player receives the rusted key." },
+    });
+    expect(readFileSync(beat.path, "utf8")).toContain("id: won-the-key");
   });
 });
