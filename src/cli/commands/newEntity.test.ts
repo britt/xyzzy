@@ -114,4 +114,53 @@ describe("newEntity", () => {
       }),
     ).rejects.toThrow(/cavern/i);
   });
+
+  it("prompts for remaining fields via an injected promptFields when interactive", async () => {
+    const dir = tmp();
+    writeAdventure(dir);
+
+    await newEntity(
+      {
+        kind: "item",
+        positional: "Rusted Key",
+        adventure: dir,
+      },
+      {
+        isTTY: true,
+        promptFields: async (fields) => {
+          expect(fields.map((f) => f.key)).toEqual(["description", "location"]);
+          return { description: "A tarnished iron key.", location: "cavern" };
+        },
+      },
+    );
+
+    const content = readFileSync(join(dir, "items", "rusted-key.yaml"), "utf8");
+    expect(content).toContain("description: A tarnished iron key.");
+    expect(content).toContain("location: cavern");
+  });
+
+  it("does not invoke promptFields when interactive but every field was already supplied via flags", async () => {
+    const dir = tmp();
+    writeAdventure(dir);
+    let called = false;
+
+    await newEntity(
+      {
+        kind: "item",
+        positional: "Rusted Key",
+        adventure: dir,
+        description: "A tarnished iron key.",
+        location: "cavern",
+      },
+      {
+        isTTY: true,
+        promptFields: async () => {
+          called = true;
+          return {};
+        },
+      },
+    );
+
+    expect(called).toBe(false);
+  });
 });

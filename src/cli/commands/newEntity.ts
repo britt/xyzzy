@@ -23,7 +23,24 @@ export interface NewEntityOptions {
   nonInteractive?: boolean;
 }
 
-/** Render `EntityForm` for the given fields and resolve with the answers once done. */
+export type PromptFieldsFn = (
+  fields: FormFieldSpec[],
+) => Promise<Record<string, string | undefined>>;
+
+export interface NewEntityDeps {
+  /** injected for testability; defaults to the real Ink-based prompt. */
+  promptFields?: PromptFieldsFn;
+  /** injected for testability; defaults to `process.stdin.isTTY`. */
+  isTTY?: boolean;
+}
+
+/**
+ * Render `EntityForm` for the given fields and resolve with the answers once
+ * done. TTY-only glue — exercised manually/end-to-end (see
+ * VERIFICATION_PLAN.md Scenario 8), same convention as `new.ts`'s
+ * `stdinPrompter`; `newEntity`'s own field-merging logic is covered via the
+ * injectable `promptFields` dependency instead.
+ */
 async function promptRemainingFields(
   fields: FormFieldSpec[],
 ): Promise<Record<string, string | undefined>> {
@@ -50,7 +67,10 @@ async function promptRemainingFields(
  * non-interactive or stdin isn't a TTY, in which case they're left as
  * placeholders), then write via `writeEntityFile`.
  */
-export async function newEntity(opts: NewEntityOptions): Promise<void> {
+export async function newEntity(
+  opts: NewEntityOptions,
+  deps: NewEntityDeps = {},
+): Promise<void> {
   const adventureDir = opts.adventure ?? process.cwd();
   const id =
     opts.kind === "beat" ? opts.positional : (opts.id ?? slugify(opts.positional));
@@ -74,9 +94,11 @@ export async function newEntity(opts: NewEntityOptions): Promise<void> {
     }
   }
 
-  const interactive = Boolean(process.stdin.isTTY) && !opts.nonInteractive;
+  const isTTY = deps.isTTY ?? Boolean(process.stdin.isTTY);
+  const interactive = isTTY && !opts.nonInteractive;
   if (remaining.length > 0 && interactive) {
-    Object.assign(values, await promptRemainingFields(remaining));
+    const promptFields = deps.promptFields ?? promptRemainingFields;
+    Object.assign(values, await promptFields(remaining));
   }
 
   const { path } = writeEntityFile(adventureDir, {
