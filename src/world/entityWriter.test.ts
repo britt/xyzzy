@@ -280,6 +280,21 @@ describe("writeEntityFile", () => {
     );
   });
 
+  it("writes correctly when adventureDir points at the adventure.yaml file itself, not its directory", () => {
+    const dir = tmp();
+    writeAdventure(dir);
+
+    const { path } = writeEntityFile(join(dir, "adventure.yaml"), {
+      kind: "room",
+      id: "lake",
+      name: "The Still Lake",
+      values: {},
+    });
+
+    expect(path).toBe(join(dir, "rooms", "lake.yaml"));
+    expect(existsSync(path)).toBe(true);
+  });
+
   it("refuses to overwrite an existing file, leaving it untouched", () => {
     const dir = tmp();
     writeAdventure(dir);
@@ -355,5 +370,39 @@ describe("writeEntityFile", () => {
       values: { description: "The player receives the rusted key." },
     });
     expect(readFileSync(beat.path, "utf8")).toContain("id: won-the-key");
+  });
+
+  it("refuses an empty id, without writing", () => {
+    const dir = tmp();
+    writeAdventure(dir);
+
+    expect(() =>
+      writeEntityFile(dir, { kind: "room", id: "", name: "!!!", values: {} }),
+    ).toThrow(/empty id/i);
+    expect(existsSync(join(dir, "rooms", ".yaml"))).toBe(false);
+  });
+
+  it("refuses an id containing a path separator, without escaping the adventure directory", () => {
+    const dir = tmp();
+    writeAdventure(dir);
+
+    expect(() =>
+      writeEntityFile(dir, {
+        kind: "room",
+        id: "../../escaped",
+        name: "Safe Name",
+        values: {},
+      }),
+    ).toThrow(/invalid id/i);
+    expect(existsSync(join(dir, "..", "..", "escaped.yaml"))).toBe(false);
+  });
+
+  it("refuses an id of exactly '..' ", () => {
+    const dir = tmp();
+    writeAdventure(dir);
+
+    expect(() =>
+      writeEntityFile(dir, { kind: "beat", id: "..", values: {} }),
+    ).toThrow(/invalid id/i);
   });
 });

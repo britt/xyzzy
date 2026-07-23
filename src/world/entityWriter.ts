@@ -164,7 +164,15 @@ export function findEntityIdConflict(
   return typeof label === "string" ? label : `id "${id}"`;
 }
 
-function requireAdventureFile(adventureDir: string): void {
+/**
+ * Resolve `adventureDir` (which, like `readAdventureFile`, accepts either
+ * the adventure directory or `adventure.yaml` itself) to the adventure's
+ * containing directory. Always use this rather than the raw `adventureDir`
+ * argument when building a path to write into — otherwise, if the caller
+ * passed the `adventure.yaml` file path itself, joining `rooms/<id>.yaml`
+ * onto it treats a file as a directory and crashes with a raw ENOTDIR.
+ */
+function resolveAdventureDir(adventureDir: string): string {
   let adventureFile: string;
   try {
     adventureFile = resolveAdventureFile(adventureDir);
@@ -176,6 +184,26 @@ function requireAdventureFile(adventureDir: string): void {
   if (!existsSync(adventureFile)) {
     throw new Error(
       `No such adventure at ${adventureDir}. Run \`xyzzy new <name>\` first.`,
+    );
+  }
+  return dirname(adventureFile);
+}
+
+/**
+ * Reject an id that can't safely become a single path segment: empty (e.g.
+ * a name that slugifies to nothing), or containing a path separator or `..`
+ * — either of which would let `entityFilePath` write outside the intended
+ * kind directory (or outside the adventure directory entirely).
+ */
+function assertValidId(id: string): void {
+  if (id.length === 0) {
+    throw new Error(
+      "Cannot use an empty id. Pass --id explicitly, or choose a name with at least one letter or digit.",
+    );
+  }
+  if (id.includes("/") || id.includes("\\") || id === "..") {
+    throw new Error(
+      `Invalid id "${id}": must be a single path segment (no "/", "\\", or "..").`,
     );
   }
 }
@@ -190,14 +218,12 @@ export function writeEntityFile(
   adventureDir: string,
   input: EntityWriteInput,
 ): { path: string } {
-  requireAdventureFile(adventureDir);
+  assertValidId(input.id);
+  const dir = resolveAdventureDir(adventureDir);
 
-  const path = entityFilePath(adventureDir, input.kind, input.id);
-  if (existsSync(path)) {
-    throw new Error(`File already exists, refusing to overwrite: ${path}`);
-  }
+  const path = entityFilePath(dir, input.kind, input.id);
 
-  const conflict = findEntityIdConflict(adventureDir, input.kind, input.id);
+  const conflict = findEntityIdConflict(dir, input.kind, input.id);
   if (conflict !== undefined) {
     throw new Error(
       `A ${input.kind} with id "${input.id}" already exists (${conflict}).`,
@@ -205,6 +231,16 @@ export function writeEntityFile(
   }
 
   mkdirSync(dirname(path), { recursive: true });
-  writeFileSync(path, renderEntityYaml(input), "utf8");
+  try {
+    // "wx" opens for exclusive write, failing atomically if the file
+    // already exists — closes the check-then-act race an existsSync()
+    // pre-check followed by a plain write would leave open.
+    writeFileSync(path, renderEntityYaml(input), { encoding: "utf8", flag: "wx" });
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === "EEXIST") {
+      throw new Error(`File already exists, refusing to overwrite: ${path}`);
+    }
+    throw err;
+  }
   return { path };
 }
