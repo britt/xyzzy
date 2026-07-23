@@ -156,3 +156,86 @@
   `Refusing to scaffold into ...: path already exists and is not a directory.`
   and exits 1, instead of a raw Node stack-trace-style error.
 - Completed: 2026-07-23 08:52 PDT
+
+## Task: `xyzzy new room|item|character|beat` entity subcommands - COMPLETE
+
+- Started: 2026-07-23 (see `IMPLEMENTATION_PLAN.md`)
+- Scope: adds `xyzzy new room|item|character|beat` alongside the existing
+  `xyzzy new <name>` adventure scaffold. Each writes a new entity file into
+  the adventure's conventional `<kind>s/` directory, with every field besides
+  the name/id (`--description`, `--location`, `--persona`, `--trigger`)
+  suppliable via flag, prompted interactively via an Ink form when in a real
+  terminal, or left as a commented placeholder when skipped or run
+  non-interactively.
+- Tasks 1–9 followed strict RED→GREEN TDD, one commit per task:
+  1. `src/util/slug.ts` — `slugify()`, 5 cases.
+  2. `src/world/entityWriter.ts` — `ENTITY_FIELDS` + pure `renderEntityYaml`
+     (all-supplied/all-skipped/mixed per kind), 9 cases.
+  3. `entityWriter.ts` additive — `entityFilePath` (pluralized per-kind path)
+     + `findEntityIdConflict` (reuses `loader.readAdventureFile` rather than
+     re-scanning directories), 5 cases.
+  4. `entityWriter.ts` additive — `writeEntityFile` (mkdir -p, refuse
+     overwrite, refuse id conflict, refuse missing `adventure.yaml`, happy
+     path all 4 kinds), 5 cases.
+  5. `src/cli/forms/EntityForm.tsx` — sequential one-field-at-a-time Ink
+     prompt (`ink-text-input`), skip-on-empty/no-default, accept-default-
+     as-is, full answers map on completion, immediate `onDone({})` for an
+     empty field list, 6 cases — all passed on first GREEN attempt.
+  6. `src/cli/commands/newEntity.ts` — orchestration: id/name resolution
+     (beat's positional is its `id` directly, no `name` field), flag values
+     vs. remaining fields, dynamic `import("ink")`/`import(EntityForm)` so
+     the interactive branch is never even loaded on the non-interactive
+     path, 5 cases — all passed on first GREEN attempt.
+  7. CLI wiring in `src/cli/index.ts` (excluded from coverage; verified
+     manually: `new --help`, `new room --help`, and an end-to-end
+     room/item/character/beat → validate → overwrite-refusal →
+     id-collision-refusal run against a scratch copy of
+     `examples/cave-of-echoes`).
+  8. Docs: extended README's "Create an adventure" section with an "Add
+     entities" subsection; added VERIFICATION_PLAN.md Scenario 7
+     (non-interactive, flag-driven) and Scenario 8 (interactive Ink form,
+     real TTY).
+  9. Final pass (this entry).
+- A follow-up test/GREEN cycle added an injectable `NewEntityDeps`
+  (`promptFields`, `isTTY`) to `newEntity()`, mirroring `new.ts`'s existing
+  `Prompter` injection pattern, so the interactive field-merging logic is
+  unit-testable without a real TTY. `promptRemainingFields` itself (the Ink
+  render glue) stays covered only by manual/e2e verification, the same
+  accepted convention as `new.ts`'s `stdinPrompter`.
+- Bug caught via manual end-to-end verification (not a regression in
+  already-committed code, but in the verification plan I'd drafted before
+  implementing): `VERIFICATION_PLAN.md` Scenario 7 originally had the item
+  step skip both `--description` and `--location`, but `Item.description` is
+  required by the schema (only `location` is optional) — so the scenario's
+  own final `validate` step would have failed. Fixed by supplying
+  `--description` and skipping only the schema-optional `--location`,
+  consistent with beat's step already skipping only the optional `--trigger`.
+- Tests: 282 passing, 0 failing (up from 269 pre-feature).
+- Coverage: `slug.ts` 100/100/100/100. `entityWriter.ts` 97.31/88.57/100/97.31
+  (one uncovered defensive fallback branch in `findEntityIdConflict`).
+  `EntityForm.tsx` 100/100/100/100. `newEntity.ts` 71.21/87.5/50/71.21 — the
+  uncovered lines are entirely `promptRemainingFields`'s Ink-rendering body,
+  the same class of TTY-only glue `new.ts`'s `stdinPrompter` is exempted
+  from. Overall repo: Stmts 90.41%, Branch 86.09%, Funcs 94.2%, Lines
+  90.41% — meets the 90/85/90/90 thresholds.
+- Build: Successful (`bun run build`), including a smoke run of the built
+  `dist/cli/index.js` for `new --help`/`new room --help`.
+- Linting: Clean (`bun run lint`), typecheck clean (`bun run typecheck`).
+  (`bun run format:check` reports pre-existing repo-wide Prettier drift
+  unrelated to this change, consistent with the prior PR's note about
+  deliberately not running a blanket `prettier --write .`; not part of
+  CLAUDE.md's required `bun run lint` gate.)
+- End-to-end verification: ran the corrected Scenario 7 flow manually against
+  a scratch copy of `examples/cave-of-echoes` — room/item/character/beat
+  created, `validate` passes, re-running the same room command refuses to
+  overwrite (file byte-for-byte unchanged), and `new room "Cavern"` refuses
+  on the id collision with a message naming the existing room. Scenario 8
+  (interactive Ink form over a real TTY) documented but not run in this
+  non-interactive session — flagged for the developer to confirm.
+- Completed: 2026-07-23
+- Notes: merged `origin/main` mid-implementation (PR #19, the base `xyzzy
+  new <name>` scaffold implementation) with no conflicts; it doesn't touch
+  the `new` command's structure so Task 7's subcommand wiring applied
+  cleanly on top. Held off on a version bump — this repo bumps version as
+  its own separate commit once a feature is merged (see `#18` vs `#19` in
+  the git log), and that's a decision for whoever merges this branch.
