@@ -1,6 +1,16 @@
+import { join } from "node:path";
 import { stringify } from "yaml";
+import { readAdventureFile } from "./loader.js";
 
 export type EntityKind = "room" | "item" | "character" | "beat";
+
+/** Conventional sibling directory name for each entity kind. */
+const KIND_DIR: Record<EntityKind, string> = {
+  room: "rooms",
+  item: "items",
+  character: "characters",
+  beat: "beats",
+};
 
 export interface EntityFieldSpec {
   key: string;
@@ -106,4 +116,49 @@ export function renderEntityYaml(input: EntityWriteInput): string {
 
   lines.push(...STRUCTURAL_BLOCKS[input.kind]);
   return lines.join("\n") + "\n";
+}
+
+/** `<adventureDir>/<kind's pluralized dir>/<id>.yaml`. */
+export function entityFilePath(
+  adventureDir: string,
+  kind: EntityKind,
+  id: string,
+): string {
+  return join(adventureDir, KIND_DIR[kind], `${id}.yaml`);
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
+function entitiesOfKind(raw: unknown, kind: EntityKind): unknown[] {
+  if (!isRecord(raw)) return [];
+  if (kind === "beat") {
+    return Array.isArray(raw.beats) ? raw.beats : [];
+  }
+  const entities = raw.entities;
+  if (!isRecord(entities)) return [];
+  const list = entities[`${kind}s`];
+  return Array.isArray(list) ? list : [];
+}
+
+/**
+ * Scan the adventure's currently-defined entities of `kind` (inline in
+ * `adventure.yaml` or split across the conventional directory) for a
+ * matching `id`. Returns a human-readable descriptor of the conflicting
+ * entity if found, else `undefined`.
+ */
+export function findEntityIdConflict(
+  adventureDir: string,
+  kind: EntityKind,
+  id: string,
+): string | undefined {
+  const raw = readAdventureFile(adventureDir);
+  const match = entitiesOfKind(raw, kind).find(
+    (entry) => isRecord(entry) && entry.id === id,
+  );
+  if (!match || !isRecord(match)) return undefined;
+
+  const label = kind === "beat" ? match.description : match.name;
+  return typeof label === "string" ? label : `id "${id}"`;
 }

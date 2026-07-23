@@ -1,5 +1,34 @@
+import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { renderEntityYaml } from "./entityWriter.js";
+import {
+  entityFilePath,
+  findEntityIdConflict,
+  renderEntityYaml,
+} from "./entityWriter.js";
+
+const MINIMAL_ADVENTURE = `
+meta:
+  id: a
+  title: A
+  version: "1"
+premise: p
+start: {}
+entities:
+  rooms:
+    - id: cavern
+      name: The Great Cavern
+      description: An immense vaulted space.
+`;
+
+function tmp(): string {
+  return mkdtempSync(join(tmpdir(), "xyzzy-entitywriter-"));
+}
+
+function writeAdventure(dir: string, yaml = MINIMAL_ADVENTURE): void {
+  writeFileSync(join(dir, "adventure.yaml"), yaml, "utf8");
+}
 
 describe("renderEntityYaml", () => {
   describe("room", () => {
@@ -168,5 +197,61 @@ describe("renderEntityYaml", () => {
           "#     value: <value>\n",
       );
     });
+  });
+});
+
+describe("entityFilePath", () => {
+  it("pluralizes each kind's directory", () => {
+    expect(entityFilePath("/adv", "room", "cavern")).toBe(
+      "/adv/rooms/cavern.yaml",
+    );
+    expect(entityFilePath("/adv", "item", "rusted-key")).toBe(
+      "/adv/items/rusted-key.yaml",
+    );
+    expect(entityFilePath("/adv", "character", "old-hermit")).toBe(
+      "/adv/characters/old-hermit.yaml",
+    );
+    expect(entityFilePath("/adv", "beat", "won-the-key")).toBe(
+      "/adv/beats/won-the-key.yaml",
+    );
+  });
+});
+
+describe("findEntityIdConflict", () => {
+  it("returns undefined for a fresh id", () => {
+    const dir = tmp();
+    writeAdventure(dir);
+    expect(findEntityIdConflict(dir, "room", "lake")).toBeUndefined();
+  });
+
+  it("returns a defined value when the id already exists inline in adventure.yaml", () => {
+    const dir = tmp();
+    writeAdventure(dir);
+    expect(findEntityIdConflict(dir, "room", "cavern")).toBeDefined();
+  });
+
+  it("returns a defined value when the id already exists in another file under the kind directory", () => {
+    const dir = tmp();
+    writeAdventure(dir);
+    mkdirSync(join(dir, "items"));
+    writeFileSync(
+      join(dir, "items", "coin.yaml"),
+      "id: coin\nname: Old Coin\ndescription: A tarnished coin.\n",
+      "utf8",
+    );
+    expect(findEntityIdConflict(dir, "item", "coin")).toBeDefined();
+  });
+
+  it("checks the top-level beats list for kind beat, not entities", () => {
+    const dir = tmp();
+    writeAdventure(
+      dir,
+      MINIMAL_ADVENTURE +
+        "beats:\n" +
+        "  - id: find-light\n" +
+        "    description: The player lights the lantern.\n",
+    );
+    expect(findEntityIdConflict(dir, "beat", "find-light")).toBeDefined();
+    expect(findEntityIdConflict(dir, "room", "find-light")).toBeUndefined();
   });
 });
