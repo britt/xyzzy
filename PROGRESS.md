@@ -239,3 +239,62 @@
   cleanly on top. Held off on a version bump — this repo bumps version as
   its own separate commit once a feature is merged (see `#18` vs `#19` in
   the git log), and that's a decision for whoever merges this branch.
+
+## Task: Code review fixes on entity subcommands (PR #20) - COMPLETE
+
+- Started: 2026-07-23
+- Scope: a manual code review of the entity-subcommands diff (no dedicated
+  review skill was invokable in this session, so reviewed by hand) surfaced
+  5 findings, verified by reproducing each before fixing. All 5 fixed with
+  RED tests first.
+- Finding 1 (security, path traversal): `entityFilePath` joined the
+  caller-supplied id straight into a filesystem path with no validation,
+  and beat's positional argument was used as the id with no `slugify` at
+  all. `--id "../../escaped"` (or `new beat "../../escaped-beat"`) wrote
+  files outside the adventure directory — reproduced on disk before the
+  fix. Fixed by `assertValidId` in `entityWriter.ts`, rejecting any id
+  containing `/`, `\`, or equal to `..`, before any fs access.
+- Finding 2 (error handling): pointing `--adventure` at `adventure.yaml`
+  itself (a form `resolveAdventureFile` already documents as valid input)
+  crashed with a raw `ENOTDIR: not a directory, mkdir '.../adventure.yaml/rooms'`
+  instead of a friendly message — the same bug class already fixed once for
+  `scaffoldAdventure`'s `assertDirIsWritable`, reintroduced here. Fixed by
+  `resolveAdventureDir`, normalizing to the containing directory via
+  `resolveAdventureFile` + `dirname` before building any path.
+- Finding 3 (correctness): an all-punctuation name (e.g. `"!!!"`) slugified
+  to an empty string with no fallback, silently writing `<kind>/.yaml`.
+  `scaffolder.ts`'s own local slugify already guards this exact case
+  (`slug || "adventure"`); `util/slug.ts` didn't. Fixed by the same
+  `assertValidId` as Finding 1 (empty-id check).
+- Finding 4 (correctness): `EntityForm`'s empty-fields `onDone({})` guard
+  depended on `[fields, onDone]`, so a re-render with fresh prop identities
+  re-fired it — verified via a rerender test showing 3 calls instead of 1,
+  violating the component's own "calls onDone once" contract. Not
+  triggered by the current sole caller, but a latent bug for any future
+  one. Fixed by switching to a true mount-once `useEffect(..., [])`.
+- Finding 5 (correctness, minor): `writeEntityFile` checked
+  `existsSync(path)` then wrote separately — a check-then-act race between
+  two concurrent invocations targeting the same id. Not independently
+  unit-testable (synchronous single-process code can't reproduce a
+  multi-process race), so covered by the existing overwrite-refusal test
+  continuing to pass. Fixed by using `writeFileSync(..., { flag: "wx" })`
+  and catching `EEXIST` for the friendly message, closing the gap
+  atomically at the OS level.
+- Tests: RED confirmed for all findings with a concrete reproduction
+  (findings 1/3/4 via new failing assertions; finding 2 via the file-path
+  test genuinely crashing with the raw ENOTDIR before the fix). GREEN:
+  287 tests passing (up from 282), 0 failing.
+- Coverage: `entityWriter.ts` 96.4/88.88/100/96.4, `EntityForm.tsx`
+  100/100/100/100. Overall repo: 90.47/86.38/94.24/90.47 (meets
+  90/85/90/90).
+- Build: Successful (`bun run build`). Linting: clean (`bun run lint`),
+  typecheck clean (`bun run typecheck`).
+- End-to-end verification: re-ran the three reproduction commands
+  (`--id "../../escaped"`, `new room "!!!"`, `--adventure .../adventure.yaml`)
+  against a scratch adventure — the first two now refuse cleanly with no
+  file written, the third now succeeds and writes into the correct sibling
+  directory instead of crashing.
+- Completed: 2026-07-23
+- Notes: a PR (#20) was opened for this branch from the Claude Code UI
+  before this task started; no new PR was created, these commits update
+  it directly.
