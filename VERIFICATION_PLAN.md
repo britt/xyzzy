@@ -11,6 +11,7 @@ These scenarios assume **no local LLM server is available**. They cover every CL
 - The real example adventure at `examples/cave-of-echoes` is present and untouched — copy it to a scratch directory (e.g. under `/tmp`) rather than editing it in place or writing saves into it.
 - A scratch directory for throwaway output (adventures, configs, saves), cleaned up after each scenario.
 - Scenario 5 additionally requires a real interactive terminal (TTY), since Ink's input handling needs one.
+- Scenario 8 also requires a real TTY, for the same reason.
 
 ## Scenarios
 
@@ -127,6 +128,55 @@ These scenarios assume **no local LLM server is available**. They cover every CL
 - [ ] Neither step exits 0 with zero stdout/stderr
 
 **If Blocked**: If this fails, it's a real regression in how the CLI's entry point resolves its own invocation — do not paper over it by only checking `bun run start` or unit tests; both can stay green while this is broken.
+
+### Scenario 7: Non-interactive entity creation (`xyzzy new room|item|character|beat`)
+
+**Context**: `src/cli/commands/newEntity.ts` and its CLI wiring in `src/cli/index.ts` don't exist yet (see `IMPLEMENTATION_PLAN.md`), so this scenario is expected to FAIL until Tasks 1–7 are implemented. It exercises the flag-driven, non-interactive path — no TTY required — including the placeholder-comment behavior, id-collision refusal, and overwrite refusal, and confirms the written files integrate cleanly with `validate`.
+
+**Steps**:
+1. Copy `examples/cave-of-echoes` to `/tmp/xyzzy-verify-entities`.
+2. `bun run start -- new room "Old Cistern" --adventure /tmp/xyzzy-verify-entities --description "A dank stone cistern, long since run dry." --non-interactive`
+3. `bun run start -- new item "Rusted Key" --adventure /tmp/xyzzy-verify-entities --non-interactive` (no `--description`/`--location`)
+4. `bun run start -- new character "Old Hermit" --adventure /tmp/xyzzy-verify-entities --persona "A reclusive hermit who trusts no one." --location cavern --non-interactive`
+5. `bun run start -- new beat won-the-key --adventure /tmp/xyzzy-verify-entities --description "The player receives the rusted key." --non-interactive`
+6. Re-run step 2 verbatim a second time.
+7. `bun run start -- new room "Cavern" --adventure /tmp/xyzzy-verify-entities --non-interactive` (slugifies to `cavern`, which already exists as a room id in `cave-of-echoes`)
+8. `bun run start -- validate /tmp/xyzzy-verify-entities`
+9. Delete `/tmp/xyzzy-verify-entities`.
+
+**Success Criteria**:
+- [ ] Step 2 exits 0, prints a confirmation naming `rooms/old-cistern.yaml`, and that file contains `id: old-cistern`, `name: Old Cistern`, an uncommented `description:` line with the supplied text, and a commented `# exits:` placeholder block
+- [ ] Step 3 exits 0 and `items/rusted-key.yaml` has `id`/`name` set plainly but both `# description: <placeholder>` and `# location: <placeholder>` commented out
+- [ ] Step 4 exits 0 and `characters/old-hermit.yaml` has `persona` and `location: cavern` set plainly, with `# history: []`, `# state: {}`, and `# beats:` placeholders present
+- [ ] Step 5 exits 0 and `beats/won-the-key.yaml` has `id: won-the-key` (no `name` field at all), an uncommented `description:`, and a commented `# trigger:` and `# effects:` block
+- [ ] None of steps 2–5 hang or attempt to open a TTY/render the Ink form — they return promptly
+- [ ] Step 6 exits non-zero, reports the file already exists, and leaves `rooms/old-cistern.yaml` byte-for-byte unchanged
+- [ ] Step 7 exits non-zero, reports the id `cavern` conflict (naming where it's already defined), and writes no file
+- [ ] Step 8 exits 0 and reports the adventure valid — confirming the new files (including `old-hermit`'s reference to the existing `cavern` room) merge cleanly through the loader's conventional-directory scan without breaking cross-reference validation
+
+**If Blocked**: Expected to fail today (the subcommands don't exist). Once implemented, if any step is vague or silently no-ops, treat it as a real bug in `entityWriter.ts`/`newEntity.ts` — report it, don't paper over it.
+
+### Scenario 8: Interactive entity creation via the real Ink form
+
+**Context**: Extends Scenario 7 to the interactive path — `EntityForm` (`src/cli/forms/EntityForm.tsx`) only runs when stdin is a real TTY and `--non-interactive` wasn't passed, the same constraint Scenario 5 documents for the play TUI. This must run in a real interactive terminal.
+
+**Steps**:
+1. Copy `examples/cave-of-echoes` to `/tmp/xyzzy-verify-entity-form`.
+2. In a real terminal: `bun run start -- new item "Brass Whistle" --adventure /tmp/xyzzy-verify-entity-form`
+3. At the `Description` prompt, type a description and press Enter.
+4. At the `Location` prompt, press Enter with no input (skip).
+5. `cat /tmp/xyzzy-verify-entity-form/items/brass-whistle.yaml`
+6. In the same terminal: `bun run start -- new item "Tin Whistle" --adventure /tmp/xyzzy-verify-entity-form --description "A cheap tin whistle." --location cavern`
+7. Delete `/tmp/xyzzy-verify-entity-form`.
+
+**Success Criteria**:
+- [ ] Step 2 launches and shows a `Description` prompt (only unset scalar fields are prompted; `id`/`name` are already resolved from the positional argument and never themselves prompted)
+- [ ] Step 3's typed value appears uncommented as `description:` in the written file
+- [ ] Step 4's skip appears as a commented `# location: <placeholder>` line in the written file
+- [ ] No error banners appear at any point, and the process exits cleanly back to the shell once the file is written
+- [ ] Step 6, with both relevant flags supplied up front, writes `items/tin-whistle.yaml` immediately with no form shown at all (both scalar fields already satisfied by flags)
+
+**If Blocked**: If no real TTY is available (e.g. a non-interactive sandboxed tool), stop and ask the developer to run this scenario, or note the limitation explicitly in the verification log. Do not substitute `ink-testing-library` and report it as this scenario passing — that's a unit test, not verification.
 
 ## Verification Rules
 
