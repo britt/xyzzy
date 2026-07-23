@@ -5,6 +5,7 @@ import { isMainModule } from "./isMainModule.js";
 import { safeRealpath } from "./safeRealpath.js";
 import { play } from "./commands/play.js";
 import { newAdventure } from "./commands/new.js";
+import { newEntity } from "./commands/newEntity.js";
 import { validate } from "./commands/validate.js";
 import { map } from "./commands/map.js";
 import {
@@ -37,11 +38,141 @@ export function buildProgram(): Command {
       play(path, opts),
     );
 
-  program
+  const newCmd = program
     .command("new")
     .argument("<name>", "adventure name / target directory")
     .description("scaffold a new adventure")
     .action((name: string) => newAdventure(name));
+
+  newCmd
+    .command("room")
+    .argument("<name>", "room name")
+    .option("--adventure <path>", "adventure directory", process.cwd())
+    .option("--id <id>", "override the generated id")
+    .option("--description <text>", "room description")
+    .option(
+      "--non-interactive",
+      "never prompt; leave unset fields as placeholders",
+    )
+    .description("create a new room")
+    .action(
+      (
+        name: string,
+        opts: {
+          adventure: string;
+          id?: string;
+          description?: string;
+          nonInteractive?: boolean;
+        },
+      ) =>
+        newEntity({
+          kind: "room",
+          positional: name,
+          adventure: opts.adventure,
+          id: opts.id,
+          description: opts.description,
+          nonInteractive: opts.nonInteractive,
+        }),
+    );
+
+  newCmd
+    .command("item")
+    .argument("<name>", "item name")
+    .option("--adventure <path>", "adventure directory", process.cwd())
+    .option("--id <id>", "override the generated id")
+    .option("--description <text>", "item description")
+    .option("--location <id>", "starting room or character id")
+    .option(
+      "--non-interactive",
+      "never prompt; leave unset fields as placeholders",
+    )
+    .description("create a new item")
+    .action(
+      (
+        name: string,
+        opts: {
+          adventure: string;
+          id?: string;
+          description?: string;
+          location?: string;
+          nonInteractive?: boolean;
+        },
+      ) =>
+        newEntity({
+          kind: "item",
+          positional: name,
+          adventure: opts.adventure,
+          id: opts.id,
+          description: opts.description,
+          location: opts.location,
+          nonInteractive: opts.nonInteractive,
+        }),
+    );
+
+  newCmd
+    .command("character")
+    .argument("<name>", "character name")
+    .option("--adventure <path>", "adventure directory", process.cwd())
+    .option("--id <id>", "override the generated id")
+    .option("--persona <text>", "character persona")
+    .option("--location <id>", "starting room id")
+    .option(
+      "--non-interactive",
+      "never prompt; leave unset fields as placeholders",
+    )
+    .description("create a new character")
+    .action(
+      (
+        name: string,
+        opts: {
+          adventure: string;
+          id?: string;
+          persona?: string;
+          location?: string;
+          nonInteractive?: boolean;
+        },
+      ) =>
+        newEntity({
+          kind: "character",
+          positional: name,
+          adventure: opts.adventure,
+          id: opts.id,
+          persona: opts.persona,
+          location: opts.location,
+          nonInteractive: opts.nonInteractive,
+        }),
+    );
+
+  newCmd
+    .command("beat")
+    .argument("<id>", "beat id")
+    .option("--adventure <path>", "adventure directory", process.cwd())
+    .option("--description <text>", "what happens")
+    .option("--trigger <text>", "trigger notes surfaced to the model")
+    .option(
+      "--non-interactive",
+      "never prompt; leave unset fields as placeholders",
+    )
+    .description("create a new story beat")
+    .action(
+      (
+        id: string,
+        opts: {
+          adventure: string;
+          description?: string;
+          trigger?: string;
+          nonInteractive?: boolean;
+        },
+      ) =>
+        newEntity({
+          kind: "beat",
+          positional: id,
+          adventure: opts.adventure,
+          description: opts.description,
+          trigger: opts.trigger,
+          nonInteractive: opts.nonInteractive,
+        }),
+    );
 
   program
     .command("validate")
