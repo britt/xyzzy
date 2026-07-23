@@ -66,9 +66,11 @@ xyzzy is a single CLI with four commands.
 xyzzy new my-adventure
 ```
 
-Scaffolds a new adventure directory: a minimal valid `adventure.yaml`, a
-`saves/` folder, a README, and commented examples of a room and a character so
-you can see the optional structure.
+Prompts for the game's title (defaults to the directory name, `my-adventure`
+here) and an optional premise (defaults to placeholder text if you skip it),
+then scaffolds a new adventure directory: a minimal valid `adventure.yaml`, a
+`saves/` folder, a README, and commented examples of a room, an item, a
+character, and a story beat so you can see the optional structure.
 
 ### Play
 
