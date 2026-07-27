@@ -1,3 +1,6 @@
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { render } from "ink-testing-library";
 import { DevApp } from "./DevApp.js";
@@ -137,6 +140,168 @@ describe("DevApp sidebar", () => {
     await press(stdin, "\t"); // -> Beats, which has no entries
     await press(stdin, DOWN); // no-op, must not crash
     expect(lastFrame()).toContain("Beats");
+    unmount();
+  });
+});
+
+const ADVENTURE_YAML = `
+meta:
+  id: a
+  title: Cave of Echoes
+  version: "1"
+premise: A dark cave.
+start:
+  room: cavern
+`;
+
+const CAVERN_YAML = `
+id: cavern
+name: Cavern
+description: A dark cavern.
+exits:
+  north: hall
+`;
+
+const HALL_YAML = `
+id: hall
+name: Hall
+description: A long hall.
+`;
+
+function tmpAdventure(): string {
+  const dir = mkdtempSync(join(tmpdir(), "xyzzy-devapp-"));
+  writeFileSync(join(dir, "adventure.yaml"), ADVENTURE_YAML, "utf8");
+  mkdirSync(join(dir, "rooms"));
+  writeFileSync(join(dir, "rooms", "cavern.yaml"), CAVERN_YAML, "utf8");
+  writeFileSync(join(dir, "rooms", "hall.yaml"), HALL_YAML, "utf8");
+  return dir;
+}
+
+/** Tab from the default Config category over to Rooms, selecting Cavern. */
+async function toRooms(stdin: { write: (s: string) => void }) {
+  for (let i = 0; i < 3; i++) await press(stdin, "\t");
+}
+
+describe("DevApp editing", () => {
+  it("pressing e opens the selected entity's file via the injected openEditor", async () => {
+    const dir = tmpAdventure();
+    const opened: string[] = [];
+    const { stdin, unmount } = render(
+      <DevApp
+        adventure={adventure}
+        adventureDir={dir}
+        openEditor={(path) => opened.push(path)}
+      />,
+    );
+    await toRooms(stdin);
+    await press(stdin, "e");
+    expect(opened).toEqual([join(dir, "rooms", "cavern.yaml")]);
+    unmount();
+  });
+
+  it("pressing e on the config category opens adventure.yaml itself", async () => {
+    const dir = tmpAdventure();
+    const opened: string[] = [];
+    const { stdin, unmount } = render(
+      <DevApp
+        adventure={adventure}
+        adventureDir={dir}
+        openEditor={(path) => opened.push(path)}
+      />,
+    );
+    await press(stdin, "e");
+    expect(opened).toEqual([join(dir, "adventure.yaml")]);
+    unmount();
+  });
+
+  it("a successful edit reloads and reflects the new content", async () => {
+    const dir = tmpAdventure();
+    const openEditor = (path: string) => {
+      writeFileSync(path, CAVERN_YAML.replace("A dark cavern.", "A newly lit cavern."), "utf8");
+    };
+    const { lastFrame, stdin, unmount } = render(
+      <DevApp adventure={adventure} adventureDir={dir} openEditor={openEditor} />,
+    );
+    await toRooms(stdin);
+    await press(stdin, "e");
+    expect(lastFrame()).toContain("A newly lit cavern.");
+    unmount();
+  });
+
+  it("an edit that breaks validation shows an inline banner and a tree glyph, without disturbing other entities", async () => {
+    const dir = tmpAdventure();
+    const openEditor = (path: string) => {
+      // Point the exit at a room that doesn't exist.
+      writeFileSync(path, CAVERN_YAML.replace("north: hall", "north: nowhere"), "utf8");
+    };
+    const { lastFrame, stdin, unmount } = render(
+      <DevApp adventure={adventure} adventureDir={dir} openEditor={openEditor} />,
+    );
+    await toRooms(stdin);
+    await press(stdin, "e");
+    expect(lastFrame()).toContain("nowhere");
+    expect(lastFrame()).toContain("⚠");
+
+    // The other room is untouched and still browsable.
+    await press(stdin, DOWN);
+    expect(lastFrame()).toContain("A long hall.");
+    unmount();
+  });
+
+  it("re-editing the broken entity back to valid clears the glyph and banner", async () => {
+    const dir = tmpAdventure();
+    let content = CAVERN_YAML.replace("north: hall", "north: nowhere");
+    const openEditor = (path: string) => writeFileSync(path, content, "utf8");
+    const { lastFrame, stdin, unmount } = render(
+      <DevApp adventure={adventure} adventureDir={dir} openEditor={openEditor} />,
+    );
+    await toRooms(stdin);
+    await press(stdin, "e");
+    expect(lastFrame()).toContain("⚠");
+
+    content = CAVERN_YAML; // fix it
+    await press(stdin, "e");
+    expect(lastFrame()).not.toContain("⚠");
+    unmount();
+  });
+
+  it("surfaces malformed YAML as a banner instead of crashing the tool", async () => {
+    const dir = tmpAdventure();
+    let content = "id: cavern\nname: [unclosed\n";
+    const openEditor = (path: string) => writeFileSync(path, content, "utf8");
+    const { lastFrame, stdin, unmount } = render(
+      <DevApp adventure={adventure} adventureDir={dir} openEditor={openEditor} />,
+    );
+    await toRooms(stdin);
+    await press(stdin, "e");
+
+    // The tool is alive and reporting, not torn down by the parse error.
+    expect(lastFrame()).toContain("⚠");
+    expect(lastFrame()).toContain("Invalid YAML");
+
+    // And it recovers once the file parses again.
+    content = CAVERN_YAML;
+    await press(stdin, "e");
+    expect(lastFrame()).not.toContain("⚠");
+    expect(lastFrame()).toContain("A dark cavern.");
+    unmount();
+  });
+
+  it("leaves the file untouched when no entity is selected in an empty category", async () => {
+    const dir = tmpAdventure();
+    const opened: string[] = [];
+    const empty: Adventure = { meta: adventure.meta, premise: "p", start: {} };
+    const { stdin, unmount } = render(
+      <DevApp
+        adventure={empty}
+        adventureDir={dir}
+        openEditor={(path) => opened.push(path)}
+      />,
+    );
+    await press(stdin, "\t"); // -> Beats, which has no entries
+    await press(stdin, "e");
+    expect(opened).toEqual([]);
+    expect(readFileSync(join(dir, "adventure.yaml"), "utf8")).toBe(ADVENTURE_YAML);
     unmount();
   });
 });
