@@ -4,6 +4,7 @@ import { log } from "../util/log.js";
 import { isMainModule } from "./isMainModule.js";
 import { safeRealpath } from "./safeRealpath.js";
 import { play } from "./commands/play.js";
+import { dev } from "./commands/dev.js";
 import { newAdventure } from "./commands/new.js";
 import { newEntity } from "./commands/newEntity.js";
 import { validate } from "./commands/validate.js";
@@ -37,6 +38,13 @@ export function buildProgram(): Command {
     .action((path: string, opts: { save?: string; provider?: string }) =>
       play(path, opts),
     );
+
+  program
+    .command("dev")
+    .argument("<path>", "adventure directory")
+    .option("--provider <name>", "provider to use for play-testing")
+    .description("launch the multi-pane development TUI")
+    .action((path: string, opts: { provider?: string }) => dev(path, opts));
 
   const newCmd = program
     .command("new")

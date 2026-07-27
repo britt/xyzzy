@@ -20,6 +20,40 @@ export class AdventureLoadError extends Error {
  */
 const ENTITY_KINDS = ["rooms", "items", "characters"] as const;
 
+/**
+ * Singular form used to key {@link EntitySourceMap}, matching `EntityKind` in
+ * `entityWriter.ts` so both modules speak the same vocabulary.
+ */
+const KIND_SINGULAR: Record<string, string> = {
+  rooms: "room",
+  items: "item",
+  characters: "character",
+  beats: "beat",
+};
+
+/**
+ * `"<kind>:<id>"` (e.g. `"room:cavern"`) → absolute-or-given path of the file
+ * that entity was defined in. Because an adventure may define entities inline
+ * in `adventure.yaml`, in `<kind>/<id>.yaml`, or several to a file under any
+ * name, the only way to know where an entity lives is to record it while
+ * merging. Consumers that need to *edit* an existing entity must use this
+ * rather than reconstructing a conventional path.
+ */
+export type EntitySourceMap = Map<string, string>;
+
+function recordSources(
+  sources: EntitySourceMap,
+  kind: string,
+  entries: SourcedValue[],
+): void {
+  for (const { value, file } of entries) {
+    if (typeof value !== "object" || value === null) continue;
+    const id = (value as Record<string, unknown>).id;
+    if (typeof id !== "string") continue;
+    sources.set(`${KIND_SINGULAR[kind]}:${id}`, file);
+  }
+}
+
 /** A raw (unvalidated) entity/beat value plus the file it came from, for
  * duplicate-id error messages. */
 interface SourcedValue {
@@ -113,8 +147,12 @@ function assertNoDuplicateIds(kind: string, entries: SourcedValue[]): void {
  * inline `entities`/`beats` already present, so both styles can be mixed.
  * `dir` is the directory containing `adventure.yaml`.
  */
-function mergeConventionalDirectories(raw: unknown, dir: string): unknown {
-  if (typeof raw !== "object" || raw === null) return raw;
+function mergeConventionalDirectories(
+  raw: unknown,
+  dir: string,
+): { merged: unknown; sources: EntitySourceMap } {
+  const sources: EntitySourceMap = new Map();
+  if (typeof raw !== "object" || raw === null) return { merged: raw, sources };
   const adventure = raw as Record<string, unknown>;
   const adventureFile = join(dir, "adventure.yaml");
 
@@ -134,6 +172,7 @@ function mergeConventionalDirectories(raw: unknown, dir: string): unknown {
     if (inline.length === 0 && fromDir.length === 0) continue;
     const combined = [...inline, ...fromDir];
     assertNoDuplicateIds(kind, combined);
+    recordSources(sources, kind, combined);
     entities[kind] = combined.map((e) => e.value);
   }
   if (Object.keys(entities).length > 0) adventure.entities = entities;
@@ -147,10 +186,11 @@ function mergeConventionalDirectories(raw: unknown, dir: string): unknown {
   if (inlineBeats.length > 0 || beatsFromDir.length > 0) {
     const combined = [...inlineBeats, ...beatsFromDir];
     assertNoDuplicateIds("beat", combined);
+    recordSources(sources, "beats", combined);
     adventure.beats = combined.map((e) => e.value);
   }
 
-  return adventure;
+  return { merged: adventure, sources };
 }
 
 /**
@@ -175,6 +215,18 @@ export function resolveAdventureFile(path: string): string {
  * path-qualified errors.
  */
 export function readAdventureFile(path: string): unknown {
+  return readAdventureFileWithSources(path).raw;
+}
+
+/**
+ * {@link readAdventureFile} plus an {@link EntitySourceMap} recording which
+ * file each entity actually came from — needed by anything that edits an
+ * existing entity in place, since its source file is not derivable from its id.
+ */
+export function readAdventureFileWithSources(path: string): {
+  raw: unknown;
+  sources: EntitySourceMap;
+} {
   const file = resolveAdventureFile(path);
   let text: string;
   try {
@@ -189,7 +241,8 @@ export function readAdventureFile(path: string): unknown {
     const detail = err instanceof Error ? err.message : String(err);
     throw new AdventureLoadError(`Invalid YAML in ${file}: ${detail}`);
   }
-  return mergeConventionalDirectories(raw, dirname(file));
+  const { merged, sources } = mergeConventionalDirectories(raw, dirname(file));
+  return { raw: merged, sources };
 }
 
 /**
