@@ -150,8 +150,10 @@ would write.
 | `Escape`           | Return focus to the sidebar.                          |
 | `q`                | Quit.                                                 |
 
-Pressing `e` opens the file backing whatever is selected (`adventure.yaml`
-itself on the Adventure Config category). When the editor exits the whole
+Pressing `e` opens the file the selected entry is actually defined in — which
+may be `adventure.yaml` itself, or a file under `rooms/`, `items/`, etc. that
+holds several entities under a name unrelated to any of their ids. When the
+editor exits the whole
 adventure is reloaded and re-validated. If it no longer validates, the content
 pane shows the errors inline and a `⚠` appears beside that entry in the
 sidebar — the last good version is kept, so every other entity stays browsable
@@ -168,6 +170,15 @@ focus — while you're playing it's just the letter "q".
 
 Options: `--provider <name>` to choose the LLM provider used for play-testing.
 Browsing and editing need no model at all.
+
+`e` uses `$VISUAL`, falling back to `$EDITOR`, then `vi`. The value is a
+command line, not just a program name, so flags are respected — and a GUI
+editor needs its wait flag or it returns immediately and xyzzy reloads before
+you've typed anything:
+
+```bash
+export EDITOR="code --wait"   # or: subl --wait, "zed --wait", vim, nano
+```
 
 ### Logs & troubleshooting
 

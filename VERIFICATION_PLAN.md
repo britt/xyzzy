@@ -185,6 +185,13 @@ These scenarios assume **no local LLM server is available**. They cover every CL
 
 **Context**: `xyzzy dev` requires a real TTY, same as `play`'s Scenario 5. This scenario exercises browsing, editing via `$EDITOR`, validation-failure recovery, and embedded play-testing in one continuous session.
 
+Note the example adventure deliberately does *not* use one-entity-per-file
+naming — `rooms/cave.yaml` holds two rooms and `items/items.yaml` holds four —
+so this scenario also covers resolving an entity to the file it is really
+defined in. Set a **blocking** editor before starting; a GUI editor without its
+wait flag returns immediately and the reload fires before you have edited
+anything (`export EDITOR="code --wait"`).
+
 **Steps**:
 1. Copy `examples/cave-of-echoes` to `/tmp/xyzzy-verify-dev`.
 2. In a real terminal: `bun run start -- dev /tmp/xyzzy-verify-dev`
@@ -208,7 +215,9 @@ These scenarios assume **no local LLM server is available**. They cover every CL
 **Success Criteria**:
 - [ ] Step 3 shows Adventure Config fields by default
 - [ ] Step 4 shows the Rooms entity list and a room's rendered fields (not raw YAML)
-- [ ] Steps 5-6 show the edited description without restarting the tool
+- [ ] Step 5 opens the room's *real* source file (`rooms/cave.yaml` for the
+      first room, not a nonexistent `rooms/entrance.yaml`), and step 6 shows the
+      edited description without restarting the tool
 - [ ] Step 8 shows both the inline banner and the sidebar `⚠`, and every other entity stays normally browsable
 - [ ] Step 9 clears both the banner and the glyph
 - [ ] Step 10 reports malformed YAML inline without the tool exiting, and recovers when the file is fixed

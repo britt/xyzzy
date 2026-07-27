@@ -344,3 +344,43 @@
      closes the submenu too.
 - Outstanding: `VERIFICATION_PLAN.md` Scenario 9 requires a real TTY and
   has NOT been run — it needs to be driven manually by the developer.
+
+## `xyzzy dev` — Post-verification bug fixes - COMPLETE
+
+- Started: 2026-07-27 (after developer ran VERIFICATION_PLAN Scenario 9)
+- Reported symptom: pressing `e` did not open the selected file in the editor.
+- Root cause (found via systematic-debugging, not the initially guessed
+  relative-vs-absolute path — the path was absolute): `entityFilePath` builds
+  `<kind>s/<id>.yaml`, which is the *creation* convention `xyzzy new` writes
+  to, not a lookup of where an entity is actually defined. Adventures may
+  define entities inline in `adventure.yaml`, or put several in one file under
+  an unrelated name — `examples/cave-of-echoes` does both (`rooms/cave.yaml`
+  holds `entrance` + `cavern`; `items/items.yaml` holds four items). Measured:
+  8 of that example's 12 entities resolved to files that do not exist,
+  including the first room, so the editor opened an empty buffer.
+- Why the unit tests missed it: the `tmpAdventure()` fixture wrote one entity
+  per file with filename == id, encoding the same wrong assumption as the
+  code. Fixtures now mirror the real multi-entity layout, and new loader tests
+  assert provenance against `examples/cave-of-echoes` itself.
+- Fix 1 (`loader.ts`, `DevApp.tsx`): the loader already tracked
+  `SourcedValue.file` for duplicate-id errors and discarded it; surfaced as
+  `EntitySourceMap` via `readAdventureFileWithSources`, and edit targets now
+  resolve through it. Verified all 12 example entities resolve to existing
+  files (was 4).
+- Fix 2 (`util/editor.ts`, new): `defaultOpenEditor` had four defects —
+  inverted VISUAL/EDITOR precedence, `??` treating `EDITOR=""` as set, no
+  argument parsing (so `EDITOR="code --wait"` spawned a binary literally named
+  `code --wait`), and a discarded `spawnSync` result making a failed launch
+  silent. GUI editors return immediately without their wait flag, so the
+  reload fired before any edit. Launch failures now report in the inline
+  banner rather than throwing out of the key handler and killing the TUI.
+- Tests: 356 passing, 0 failing (up from 344). Both fixes went RED first, each
+  reproducing the real-world layout/condition before any production change.
+- Build: Successful. Linting: clean. Typecheck: clean.
+- Completed: 2026-07-27
+- Developer confirmed the fix against Scenario 9 in a real terminal.
+- Known limitation (not fixed): Ink holds stdin in raw mode with its own
+  `readable` listener, and the editor spawn does not release it, so terminal
+  editors (vim/nano, and the `vi` fallback) may misbehave. GUI editors are
+  unaffected. Deferred rather than shipped unverified — it needs a TTY to
+  validate and involves Ink's `setRawMode` refcounting.
