@@ -15,7 +15,11 @@ import type { Detector } from "../llm/Detector.js";
 import type { ProviderConfig } from "../config/schema.js";
 import { listSaves, loadGame } from "../engine/save.js";
 import { newGameState } from "../engine/state.js";
-import { readAdventureFile, resolveAdventureFile } from "../world/loader.js";
+import {
+  readAdventureFileWithSources,
+  resolveAdventureFile,
+  type EntitySourceMap,
+} from "../world/loader.js";
 import { formatIssues, validateAdventure, type ValidationIssue } from "../world/validator.js";
 import { entityFilePath, type EntityKind } from "../world/entityWriter.js";
 import {
@@ -55,6 +59,19 @@ const CONFIG_KEY = "config";
 
 function entityKey(kind: EntityKind, id: string): string {
   return `${kind}:${id}`;
+}
+
+/**
+ * Read where each entity is defined, tolerating an unreadable adventure (the
+ * caller has already loaded it once; a failure here only costs us the ability
+ * to resolve edit targets precisely, and `sourceFile` falls back).
+ */
+function readSourcesSafely(adventureDir: string): EntitySourceMap {
+  try {
+    return readAdventureFileWithSources(adventureDir).sources;
+  } catch {
+    return new Map();
+  }
 }
 
 /** Seed a fresh game, stamping the timestamp at call time. */
@@ -107,6 +124,9 @@ export function DevApp({
   const [selection, setSelection] = useState<SelectionByCategory>(INITIAL_SELECTION);
   const [adventure, setAdventure] = useState(initialAdventure);
   const [issues, setIssues] = useState<Record<string, ValidationIssue[]>>({});
+  const [sources, setSources] = useState<EntitySourceMap>(() =>
+    readSourcesSafely(adventureDir),
+  );
   const [focus, setFocus] = useState<Focus>("sidebar");
   const [playState, setPlayState] = useState<GameState | null>(null);
   const [submenuOpen, setSubmenuOpen] = useState(false);
@@ -136,6 +156,19 @@ export function DevApp({
         : undefined;
 
   /**
+   * Where an entity is actually defined — which may be `adventure.yaml`, or a
+   * file under the kind directory holding several entities under a name
+   * unrelated to any of their ids. Only falls back to the `xyzzy new` creation
+   * convention for an entity we have no record of.
+   */
+  function sourceFile(entry: CatalogEntry): string {
+    return (
+      sources.get(entityKey(entry.kind, entry.id)) ??
+      entityFilePath(adventureDir, entry.kind, entry.id)
+    );
+  }
+
+  /**
    * Open the selected entity's file in the editor, then reload and re-validate
    * the whole adventure. On failure the previous good `adventure` is kept (so
    * every other entity stays browsable) and the issues are attributed to the
@@ -146,19 +179,21 @@ export function DevApp({
       category === "config"
         ? resolveAdventureFile(adventureDir)
         : currentEntry
-          ? entityFilePath(adventureDir, currentEntry.kind, currentEntry.id)
+          ? sourceFile(currentEntry)
           : undefined;
     if (!path || !currentKey) return;
 
     openEditor?.(path);
 
-    // A syntax error in what the editor saved makes readAdventureFile throw;
-    // that must surface in the banner like any other problem, not tear down
-    // the tool from inside a key handler.
+    // A syntax error in what the editor saved makes the reload throw; that
+    // must surface in the banner like any other problem, not tear down the
+    // tool from inside a key handler.
     let result;
     let reloaded: unknown;
     try {
-      reloaded = readAdventureFile(adventureDir);
+      const read = readAdventureFileWithSources(adventureDir);
+      reloaded = read.raw;
+      setSources(read.sources);
       result = validateAdventure(reloaded);
     } catch (err) {
       result = {

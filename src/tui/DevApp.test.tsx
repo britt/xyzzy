@@ -311,6 +311,69 @@ describe("DevApp editing", () => {
     unmount();
   });
 
+  it("opens the file an entity is really defined in, even when its name differs from the id", async () => {
+    // Mirrors examples/cave-of-echoes: one file holding two rooms, named
+    // after neither of them. The `<kind>s/<id>.yaml` creation convention does
+    // not describe where these live.
+    const dir = mkdtempSync(join(tmpdir(), "xyzzy-devapp-"));
+    writeFileSync(join(dir, "adventure.yaml"), ADVENTURE_YAML, "utf8");
+    mkdirSync(join(dir, "rooms"));
+    writeFileSync(
+      join(dir, "rooms", "cave.yaml"),
+      `
+- id: cavern
+  name: Cavern
+  description: A dark cavern.
+  exits:
+    north: hall
+- id: hall
+  name: Hall
+  description: A long hall.
+`,
+      "utf8",
+    );
+
+    const opened: string[] = [];
+    const { stdin, unmount } = render(
+      <DevApp
+        adventure={adventure}
+        adventureDir={dir}
+        openEditor={(p) => opened.push(p)}
+      />,
+    );
+    await toRooms(stdin);
+    await press(stdin, "e");
+    expect(opened).toEqual([join(dir, "rooms", "cave.yaml")]);
+    unmount();
+  });
+
+  it("opens adventure.yaml for an entity defined inline rather than in a kind directory", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "xyzzy-devapp-"));
+    writeFileSync(
+      join(dir, "adventure.yaml"),
+      `${ADVENTURE_YAML}entities:
+  rooms:
+    - id: cavern
+      name: Cavern
+      description: A dark cavern.
+`,
+      "utf8",
+    );
+
+    const opened: string[] = [];
+    const { stdin, unmount } = render(
+      <DevApp
+        adventure={adventure}
+        adventureDir={dir}
+        openEditor={(p) => opened.push(p)}
+      />,
+    );
+    await toRooms(stdin);
+    await press(stdin, "e");
+    expect(opened).toEqual([join(dir, "adventure.yaml")]);
+    unmount();
+  });
+
   it("leaves the file untouched when no entity is selected in an empty category", async () => {
     const dir = tmpAdventure();
     const opened: string[] = [];
