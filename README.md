@@ -129,6 +129,46 @@ bottom. Type commands in plain language. In-game meta commands:
 Options: `--save <slot>` to resume a specific save, `--provider <name>` to
 choose an LLM provider for the session.
 
+### Develop
+
+```bash
+xyzzy dev my-adventure
+```
+
+Opens a two-pane workbench over the whole adventure: a category sidebar on the
+left (Adventure Config, Beats, Characters, Rooms, Items) and a content pane on
+the right showing the selected entry's fields as labelled rows — not raw YAML.
+Unset optional fields appear dimmed with the same placeholder text `xyzzy new`
+would write.
+
+| Key                | Action                                              |
+| ------------------ | --------------------------------------------------- |
+| `Tab` / `Shift+Tab`| Next / previous category (wraps).                    |
+| `↑` / `↓`          | Move through the selected category's entries.        |
+| `e`                | Edit the selected entry's file in `$EDITOR`.          |
+| `p`                | Play-test: New Game, or resume a save slot.           |
+| `Escape`           | Return focus to the sidebar.                          |
+| `q`                | Quit.                                                 |
+
+Pressing `e` opens the file backing whatever is selected (`adventure.yaml`
+itself on the Adventure Config category). When the editor exits the whole
+adventure is reloaded and re-validated. If it no longer validates, the content
+pane shows the errors inline and a `⚠` appears beside that entry in the
+sidebar — the last good version is kept, so every other entity stays browsable
+and you can fix the file with another `e`. Malformed YAML is reported the same
+way rather than ending the session.
+
+Pressing `p` offers **New Game** or any existing save slot, then embeds the
+same play session `xyzzy play` uses directly in the content pane. `Escape`
+hands the keyboard back to the sidebar *without* ending the session, so you can
+browse or edit mid-playthrough; `p` re-focuses the running session with its
+scrollback intact. `/quit` inside the play pane ends just that session and
+returns to browsing. Note that `q` only quits the tool when the sidebar has
+focus — while you're playing it's just the letter "q".
+
+Options: `--provider <name>` to choose the LLM provider used for play-testing.
+Browsing and editing need no model at all.
+
 ### Logs & troubleshooting
 
 The terminal UI can't print diagnostics without corrupting the screen, so
