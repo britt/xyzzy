@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   buildSystemPrompt,
   canonicalizeAction,
+  charactersFooter,
   EmptyNarrationError,
   expandBeatEffects,
   runTurn,
@@ -104,6 +105,61 @@ describe("canonicalizeAction", () => {
         interactionId: "offer-drink",
       }),
     ).toEqual({ type: "triggerInteraction", charId: "g", interactionId: "offer-drink" });
+  });
+});
+
+describe("charactersFooter", () => {
+  const withChars: Adventure = {
+    meta: { id: "a", title: "A", version: "1" },
+    premise: "p",
+    start: { room: "start" },
+    entities: {
+      rooms: [
+        { id: "start", name: "Start", description: "d" },
+        { id: "vault", name: "Vault", description: "d" },
+      ],
+      characters: [
+        { id: "g", name: "The Guard", persona: "p", history: [], state: {}, location: "start" },
+        { id: "b", name: "Barkeep", persona: "p", history: [], state: {}, location: "start" },
+      ],
+    },
+  };
+
+  it("lists every character present in the current room", () => {
+    const state = newGameState(withChars, "t");
+    expect(charactersFooter(withChars, state)).toBe(
+      "Characters\n- The Guard\n- Barkeep",
+    );
+  });
+
+  it("returns null when no characters are present in the room", () => {
+    const state = { ...newGameState(withChars, "t"), location: "vault" };
+    expect(charactersFooter(withChars, state)).toBeNull();
+  });
+
+  it("returns null for a freeform (unset) location", () => {
+    const state = { ...newGameState(withChars, "t"), location: null };
+    expect(charactersFooter(withChars, state)).toBeNull();
+  });
+
+  it("returns null for an improvised room not in the adventure", () => {
+    const state = { ...newGameState(withChars, "t"), location: "attic" };
+    expect(charactersFooter(withChars, state)).toBeNull();
+  });
+
+  it("uses a character's live location override instead of its authored starting location", () => {
+    const state = newGameState(withChars, "t");
+    const moved = {
+      ...state,
+      characters: {
+        ...state.characters,
+        g: { ...state.characters.g!, location: "vault" },
+      },
+    };
+    expect(charactersFooter(withChars, moved)).toBe("Characters\n- Barkeep");
+    expect(charactersFooter(withChars, { ...moved, location: "vault" })).toBe(
+      "Characters\n- The Guard",
+    );
   });
 });
 
@@ -438,6 +494,38 @@ describe("runTurn", () => {
       "go",
     );
     expect(narration).toContain("no obvious way out");
+  });
+
+  it("appends the list of characters present in the room to the narration", async () => {
+    const tavern: Adventure = {
+      meta: { id: "t", title: "T", version: "1" },
+      premise: "p",
+      start: { room: "start" },
+      entities: {
+        rooms: [{ id: "start", name: "Start", description: "d" }],
+        characters: [
+          { id: "g", name: "The Guard", persona: "p", history: [], state: {}, location: "start" },
+          { id: "b", name: "Barkeep", persona: "p", history: [], state: {}, location: "start" },
+        ],
+      },
+    };
+    const model = new FakeNarratorModel([{ narration: "You look around.", actions: [] }]);
+    const { narration } = await runTurn(
+      { adventure: tavern, model, clock: () => "t" },
+      newGameState(tavern, "c"),
+      "look",
+    );
+    expect(narration).toContain("Characters\n- The Guard\n- Barkeep");
+  });
+
+  it("omits the characters section when no other characters are in the room", async () => {
+    const model = new FakeNarratorModel([{ narration: "An empty room.", actions: [] }]);
+    const { narration } = await runTurn(
+      deps(model),
+      newGameState(adventure, "c"), // `adventure` fixture has no characters
+      "look",
+    );
+    expect(narration).not.toContain("Characters");
   });
 
   it("drops malformed tool-calls before the reducer", async () => {

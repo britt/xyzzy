@@ -240,6 +240,30 @@ export function exitsFooter(
 }
 
 /**
+ * Player-facing, authoritative list of characters currently present in the
+ * room. Returns null when the location is freeform or an improvised room, and
+ * also — unlike {@link exitsFooter} — when the room is authored but nobody is
+ * in it, since an empty roster isn't worth calling out.
+ */
+export function charactersFooter(
+  adventure: Adventure,
+  state: GameState,
+): string | null {
+  if (state.location === null) return null;
+  const rooms = adventure.entities?.rooms ?? [];
+  const room = rooms.find((r) => r.id === state.location);
+  if (!room) return null;
+
+  const characters = adventure.entities?.characters ?? [];
+  const present = characters.filter(
+    (c) => (state.characters[c.id]?.location ?? c.location) === state.location,
+  );
+  if (present.length === 0) return null;
+
+  return `Characters\n${present.map((c) => `- ${c.name}`).join("\n")}`;
+}
+
+/**
  * Remove any "Exit:"/"Exits: …" run the model emitted (often copied verbatim
  * from the digest, truncated and with internal ids like `[entrance]`). The
  * engine appends its own authoritative exits line, so the model's is redundant
@@ -409,10 +433,10 @@ export async function runTurn(
   // the digest (often truncated and with internal ids), then append the
   // authoritative, complete list so the player always sees every way out.
   const prose = stripProseExits(result.narration);
-  const footer = exitsFooter(adventure, reduced);
-  const narration = footer
-    ? `${prose.trimEnd()}\n\n${footer}`.trim()
-    : prose;
+  const footers = [exitsFooter(adventure, reduced), charactersFooter(adventure, reduced)]
+    .filter((f): f is string => f !== null)
+    .join("\n\n");
+  const narration = footers ? `${prose.trimEnd()}\n\n${footers}`.trim() : prose;
 
   let transcript = appendMessage(reduced.transcript, {
     role: "player",

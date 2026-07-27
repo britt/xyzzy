@@ -299,6 +299,54 @@
   before this task started; no new PR was created, these commits update
   it directly.
 
+## Task: Player-facing "Characters" footer (mirrors "Exits") - COMPLETE
+
+- Started: 2026-07-27
+- Scope: `runTurn` already appends an authoritative, programmatically
+  computed "Exits" section to every turn's narration (`exitsFooter` in
+  `src/engine/turnLoop.ts`). Added a parallel `charactersFooter` that lists
+  the characters currently present in the player's room (by name, one per
+  bullet), appended the same way — but omitted entirely (returns `null`)
+  when nobody else is in the room, per the request, rather than printing a
+  "none present" placeholder the way `exitsFooter` does for a real room
+  with zero exits.
+- Tests: RED — added a `charactersFooter` describe block to
+  `src/engine/turnLoop.test.ts` (5 cases: lists present characters, null
+  when room is empty, null for freeform/unset location, null for an
+  improvised room not in the adventure, live per-character location
+  override takes precedence over the authored starting location — reusing
+  the same filter `digest.ts`/`detection.ts` already use) plus 2
+  integration cases under the `runTurn` describe block (footer appended
+  when characters are present; footer omitted when the room has none).
+  Confirmed all 6 failed for the right reason (`charactersFooter is not a
+  function` / narration missing the section). GREEN — implemented
+  `charactersFooter` in `turnLoop.ts` and combined it with `exitsFooter`'s
+  output in `runTurn` (joined by a blank line, each omitted independently
+  when `null`). Full suite: 294 passing, 0 failing (up from 288).
+- Coverage: new `charactersFooter` function fully covered (branches: room
+  present/absent, characters present/absent, freeform location, live
+  location override). Overall repo: Stmts 90.56%, Branch 86.52%, Funcs
+  94.28%, Lines 90.56% — meets the 90/85/90/90 thresholds (pre-existing
+  gaps in unrelated files/branches, e.g. `canonicalizeAction`'s untested
+  switch arms, are unchanged by this diff).
+- Build: Successful (`bun run build`)
+- Linting: Clean (`bun run lint`)
+- End-to-end verification: exercised via `FakeNarratorModel` in
+  `runTurn` integration tests (no live model available in this session,
+  consistent with `VERIFICATION_PLAN.md`'s note that turn-taking
+  narration is out of scope without one). Confirmed `examples/cave-of-
+  echoes` has a character (`grimble`, `location: lake`) that would
+  exercise this path against a real model — flagged for the developer to
+  spot-check via `bun run start -- play` if desired.
+- Completed: 2026-07-27
+- Notes: deliberately did not touch `buildSystemPrompt` or
+  `stripProseExits` — unlike exits (which the model is told never to list,
+  since the footer is the sole authoritative source and duplication would
+  look like contradicting itself), narrating characters in prose is the
+  expected/desired model behavior; this feature only adds the explicit,
+  reliable roster alongside it, it doesn't suppress or replace character
+  mentions in narration.
+
 ## `xyzzy dev` Multi-Pane Development TUI (Tasks 1-10) - COMPLETE
 
 - Started: 2026-07-27
