@@ -371,6 +371,38 @@ describe("DevApp play-focus mode", () => {
     unmount();
   });
 
+  it("submenu Up/Down move between options, clamp at the ends, and ignore other keys", async () => {
+    const dir = tmpAdventure();
+    await saveGame(dir, "before-boss", newGameState(adventure, "now"));
+    const { lastFrame, stdin, unmount } = mountForPlay(dir);
+    await press(stdin, "p");
+
+    await press(stdin, UP); // already at the top — clamps, stays on New Game
+    await press(stdin, DOWN); // -> before-boss
+    await press(stdin, DOWN); // already at the bottom — clamps
+    await press(stdin, UP); // back to New Game
+    await press(stdin, "x"); // not a submenu key — ignored, menu stays open
+    expect(lastFrame()).toContain("New Game");
+
+    await press(stdin, "\r"); // starts a New Game, not the save
+    expect(lastFrame()).toContain("A dark cavern.");
+    expect(lastFrame()).toContain("turn 0");
+    unmount();
+  });
+
+  it("Escape closes the submenu without starting a session", async () => {
+    const dir = tmpAdventure();
+    const { lastFrame, stdin, unmount } = mountForPlay(dir);
+    await press(stdin, "p");
+    expect(lastFrame()).toContain("New Game");
+
+    await press(stdin, ESC);
+    // Back to browsing the Adventure Config pane; no play session mounted.
+    expect(lastFrame()).not.toContain("New Game");
+    expect(lastFrame()).toContain("Premise: A dark cave.");
+    unmount();
+  });
+
   it("Escape returns focus to the sidebar while the session keeps running", async () => {
     const dir = tmpAdventure();
     const { lastFrame, stdin, unmount } = mountForPlay(dir);
