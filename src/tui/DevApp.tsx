@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { Box, Text, useApp, useInput } from "ink";
+import { useEffect, useState } from "react";
+import { Box, Text, useApp, useInput, useStdout } from "ink";
 import {
   Adventure as AdventureSchema,
   type Adventure,
@@ -30,6 +30,7 @@ import {
   type Category,
 } from "./dev/entityCatalog.js";
 import { renderConfigFields, renderFieldsFor, type FieldRow } from "./dev/renderFields.js";
+import { devLayout } from "./dev/layout.js";
 
 export interface DevAppProps {
   adventure: Adventure;
@@ -72,6 +73,30 @@ function readSourcesSafely(adventureDir: string): EntitySourceMap {
   } catch {
     return new Map();
   }
+}
+
+/**
+ * Track the terminal's size, following resizes. Both dimensions may be
+ * undefined when stdout isn't a TTY (or under a test stdout), in which case
+ * the screen falls back to sizing itself to its content.
+ */
+function useTerminalSize(): { columns?: number; rows?: number } {
+  const { stdout } = useStdout();
+  const [size, setSize] = useState({
+    columns: stdout?.columns,
+    rows: stdout?.rows,
+  });
+
+  useEffect(() => {
+    if (!stdout) return;
+    const onResize = () => setSize({ columns: stdout.columns, rows: stdout.rows });
+    stdout.on("resize", onResize);
+    return () => {
+      stdout.off("resize", onResize);
+    };
+  }, [stdout]);
+
+  return size;
 }
 
 /** Seed a fresh game, stamping the timestamp at call time. */
@@ -120,6 +145,8 @@ export function DevApp({
   saveSlot = "autosave",
 }: DevAppProps) {
   const { exit } = useApp();
+  const { columns, rows } = useTerminalSize();
+  const layout = devLayout(columns, rows);
   const [category, setCategory] = useState<Category>("config");
   const [selection, setSelection] = useState<SelectionByCategory>(INITIAL_SELECTION);
   const [adventure, setAdventure] = useState(initialAdventure);
@@ -297,8 +324,19 @@ export function DevApp({
         })();
 
   return (
-    <Box flexDirection="row">
-      <Box flexDirection="column" width={26} marginRight={2}>
+    <Box
+      flexDirection="row"
+      width={layout.width}
+      height={layout.height}
+      overflow="hidden"
+    >
+      <Box
+        flexDirection="column"
+        width={layout.sidebarWidth}
+        flexShrink={0}
+        marginRight={2}
+        overflow="hidden"
+      >
         {CATEGORIES.map((c) => (
           <Text key={c} inverse={c === category}>
             {CATEGORY_LABELS[c]}
@@ -312,7 +350,7 @@ export function DevApp({
           </Text>
         ))}
       </Box>
-      <Box flexDirection="column" flexGrow={1}>
+      <Box flexDirection="column" flexGrow={1} overflow="hidden">
         {submenuOpen ? (
           <Box flexDirection="column">
             <Text>Play:</Text>

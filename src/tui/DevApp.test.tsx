@@ -1,8 +1,10 @@
+import { EventEmitter } from "node:events";
 import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { render } from "ink-testing-library";
+import { render as inkRender } from "ink";
 import { DevApp } from "./DevApp.js";
 import type { Adventure } from "../world/schema.js";
 import { FakeNarratorModel, type NarratorModel } from "../llm/NarratorModel.js";
@@ -558,5 +560,103 @@ describe("DevApp play-focus mode", () => {
     // Back to the sidebar/content pane (Adventure Config, the default selection).
     await expect.poll(() => lastFrame()).toContain("Cave of Echoes");
     unmount();
+  });
+});
+
+/**
+ * ink-testing-library's stdout hardcodes `columns: 100` and provides no
+ * `rows`, so it cannot exercise full-height layout at all. These use Ink's
+ * own renderer against a stdout that reports real dimensions.
+ */
+class SizedStdout extends EventEmitter {
+  frames: string[] = [];
+  columns: number;
+  rows: number;
+  constructor(columns: number, rows: number) {
+    super();
+    this.columns = columns;
+    this.rows = rows;
+  }
+  write = (frame: string) => {
+    this.frames.push(frame);
+  };
+  lastFrame = () => this.frames.at(-1) ?? "";
+}
+
+class TtyStdin extends EventEmitter {
+  isTTY = true;
+  setEncoding() {}
+  setRawMode() {}
+  resume() {}
+  pause() {}
+  ref() {}
+  unref() {}
+  read = () => null;
+}
+
+const ANSI = new RegExp(`${String.fromCharCode(27)}\\[[0-9;]*m`, "g");
+
+function frameGeometry(stdout: SizedStdout) {
+  const lines = stdout.lastFrame().replace(/\n$/, "").split("\n");
+  const widths = lines.map((l) => l.replace(ANSI, "").length);
+  return { height: lines.length, maxWidth: Math.max(...widths) };
+}
+
+function renderSized(columns: number, rows: number) {
+  const stdout = new SizedStdout(columns, rows);
+  const stdin = new TtyStdin();
+  const app = inkRender(
+    <DevApp adventure={adventure} adventureDir="/tmp/does-not-matter" />,
+    { stdout: stdout as never, stdin: stdin as never, patchConsole: false },
+  );
+  return { stdout, app };
+}
+
+describe("DevApp fills the terminal", () => {
+  it("occupies the full terminal height, less the row the trailing newline needs", () => {
+    for (const [columns, rows] of [
+      [80, 24],
+      [120, 40],
+      [200, 60],
+    ] as const) {
+      const { stdout, app } = renderSized(columns, rows);
+      expect(frameGeometry(stdout).height).toBe(rows - 1);
+      app.unmount();
+    }
+  });
+
+  it("stays under stdout.rows, so Ink keeps diffing instead of clearing the terminal each frame", () => {
+    const { stdout, app } = renderSized(80, 24);
+    expect(frameGeometry(stdout).height).toBeLessThan(24);
+    app.unmount();
+  });
+
+  it("never overflows the terminal width", () => {
+    for (const [columns, rows] of [
+      [80, 24],
+      [120, 40],
+      [40, 20],
+    ] as const) {
+      const { stdout, app } = renderSized(columns, rows);
+      expect(frameGeometry(stdout).maxWidth).toBeLessThanOrEqual(columns);
+      app.unmount();
+    }
+  });
+
+  it("re-lays out when the terminal is resized", async () => {
+    const { stdout, app } = renderSized(80, 24);
+    expect(frameGeometry(stdout).height).toBe(23);
+
+    // Let the effect that subscribes to `resize` flush before emitting, the
+    // same mount-timing hazard `press()` guards against for key input.
+    await tick();
+    stdout.rows = 50;
+    stdout.columns = 140;
+    stdout.emit("resize");
+
+    // Ink throttles renders at 32ms with a trailing edge, so poll rather than
+    // assuming the redraw has already landed.
+    await expect.poll(() => frameGeometry(stdout).height).toBe(49);
+    app.unmount();
   });
 });
