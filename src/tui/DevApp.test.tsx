@@ -878,16 +878,22 @@ const crowded: Adventure = {
 const frameText = (stdout: SizedStdout) =>
   stdout.lastFrame().replace(/\n$/, "").replace(ANSI, "");
 
-/** Tab to Characters (2 tabs from the default config category). */
-async function toCharacters(stdin: TtyStdin) {
+/**
+ * Tab to Characters (2 tabs from the default config category) and wait until
+ * the pane has actually rendered. Ink throttles renders at 32ms, so reading a
+ * frame straight after a keypress can still show the previous screen.
+ */
+async function toCharacters(stdin: TtyStdin, stdout: SizedStdout) {
   await press(stdin, "\t");
   await press(stdin, "\t");
+  // The lowercase id is the heading subtitle, unique to the content pane.
+  await expect.poll(() => frameText(stdout)).toContain("grimble");
 }
 
 describe("DevApp content pane scrolling", () => {
   it("never renders a pane taller than the terminal, however crowded the entity", async () => {
     const { stdout, stdin, app } = renderSized(74, 14, { adventure: crowded });
-    await toCharacters(stdin);
+    await toCharacters(stdin, stdout);
     expect(frameGeometry(stdout).height).toBeLessThan(14);
     expect(frameGeometry(stdout).maxWidth).toBeLessThanOrEqual(74);
     app.unmount();
@@ -895,7 +901,7 @@ describe("DevApp content pane scrolling", () => {
 
   it("renders each label intact rather than interleaving it with its value", async () => {
     const { stdout, stdin, app } = renderSized(74, 14, { adventure: crowded });
-    await toCharacters(stdin);
+    await toCharacters(stdin, stdout);
     const text = frameText(stdout);
     // The corruption this replaced produced fragments like "PeA suspicious".
     expect(text).toContain("Persona");
@@ -906,7 +912,7 @@ describe("DevApp content pane scrolling", () => {
 
   it("PgDn reveals content below the fold, and PgUp returns to the top", async () => {
     const { stdout, stdin, app } = renderSized(74, 14, { adventure: crowded });
-    await toCharacters(stdin);
+    await toCharacters(stdin, stdout);
 
     // The lowercase id is the heading's subtitle, unique to the content pane.
     await expect.poll(() => frameText(stdout)).toContain("grimble");
@@ -926,10 +932,10 @@ describe("DevApp content pane scrolling", () => {
 
   it("does not scroll past the end", async () => {
     const { stdout, stdin, app } = renderSized(74, 14, { adventure: crowded });
-    await toCharacters(stdin);
+    await toCharacters(stdin, stdout);
     for (let i = 0; i < 10; i++) await press(stdin, PGDN);
-    const end = frameText(stdout);
-    expect(end).toContain("Interactions"); // last group still visible
+    // Clamped at the bottom, so the last group stays on screen.
+    await expect.poll(() => frameText(stdout)).toContain("haggle");
     expect(frameGeometry(stdout).height).toBeLessThan(14);
     app.unmount();
   });
@@ -946,7 +952,7 @@ describe("DevApp content pane scrolling", () => {
       },
     };
     const { stdout, stdin, app } = renderSized(74, 14, { adventure: twoChars });
-    await toCharacters(stdin);
+    await toCharacters(stdin, stdout);
     await press(stdin, PGDN); // scroll down
     // The lowercase id is the heading's subtitle, unique to the content pane
     // (the sidebar shows the capitalised name), so it proves we scrolled past it.
@@ -960,12 +966,12 @@ describe("DevApp content pane scrolling", () => {
 
   it("offers the scroll keys only when the content actually overflows", async () => {
     const tall = renderSized(74, 40, { adventure: crowded });
-    await toCharacters(tall.stdin);
+    await toCharacters(tall.stdin, tall.stdout);
     expect(frameText(tall.stdout)).not.toContain("Scroll");
     tall.app.unmount();
 
     const short = renderSized(74, 14, { adventure: crowded });
-    await toCharacters(short.stdin);
+    await toCharacters(short.stdin, short.stdout);
     expect(frameText(short.stdout)).toContain("Scroll");
     short.app.unmount();
   });
@@ -992,7 +998,7 @@ describe("DevApp footer divider", () => {
 
   it("still fits the divider when a crowded entity scrolls", async () => {
     const { stdout, stdin, app } = renderSized(74, 14, { adventure: crowded });
-    await toCharacters(stdin);
+    await toCharacters(stdin, stdout);
     await press(stdin, PGDN);
     const lines = frameText(stdout).split("\n");
     const footer = lines.findIndex((l) => l.includes("Quit"));
