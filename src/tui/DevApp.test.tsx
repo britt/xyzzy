@@ -5,10 +5,15 @@ import { describe, expect, it } from "vitest";
 import { render } from "ink-testing-library";
 import { DevApp } from "./DevApp.js";
 import type { Adventure } from "../world/schema.js";
+import { FakeNarratorModel, type NarratorModel } from "../llm/NarratorModel.js";
+import { saveGame } from "../engine/save.js";
+import { newGameState } from "../engine/state.js";
+import type { ProviderConfig } from "../config/schema.js";
 
 /** Real terminal escape sequences — Ink parses these into `key.upArrow` etc. */
 const UP = "\x1b[A";
 const DOWN = "\x1b[B";
+const ESC = "\x1b";
 
 const adventure: Adventure = {
   meta: { id: "a", title: "Cave of Echoes", version: "1", author: "Britt" },
@@ -177,6 +182,25 @@ function tmpAdventure(): string {
   return dir;
 }
 
+const provider: ProviderConfig = {
+  kind: "openai-compatible",
+  baseURL: "http://localhost:11434/v1",
+  model: "llama3.1",
+};
+
+function mountForPlay(dir: string, model: NarratorModel = new FakeNarratorModel()) {
+  return render(
+    <DevApp
+      adventure={adventure}
+      adventureDir={dir}
+      provider={provider}
+      makeModel={() => model}
+      listModels={async () => []}
+      providers={{}}
+    />,
+  );
+}
+
 /** Tab from the default Config category over to Rooms, selecting Cavern. */
 async function toRooms(stdin: { write: (s: string) => void }) {
   for (let i = 0; i < 3; i++) await press(stdin, "\t");
@@ -302,6 +326,97 @@ describe("DevApp editing", () => {
     await press(stdin, "e");
     expect(opened).toEqual([]);
     expect(readFileSync(join(dir, "adventure.yaml"), "utf8")).toBe(ADVENTURE_YAML);
+    unmount();
+  });
+});
+
+describe("DevApp play-focus mode", () => {
+  it("p opens the New Game / Resume submenu", async () => {
+    const dir = tmpAdventure();
+    const { lastFrame, stdin, unmount } = mountForPlay(dir);
+    await press(stdin, "p");
+    expect(lastFrame()).toContain("New Game");
+    unmount();
+  });
+
+  it("the submenu lists existing saves below New Game", async () => {
+    const dir = tmpAdventure();
+    await saveGame(dir, "before-boss", newGameState(adventure, "now"));
+    const { lastFrame, stdin, unmount } = mountForPlay(dir);
+    await press(stdin, "p");
+    expect(lastFrame()).toContain("New Game");
+    expect(lastFrame()).toContain("before-boss");
+    unmount();
+  });
+
+  it("choosing New Game mounts the embedded play session, focused", async () => {
+    const dir = tmpAdventure();
+    const { lastFrame, stdin, unmount } = mountForPlay(dir);
+    await press(stdin, "p");
+    await press(stdin, "\r"); // New Game is the first/default option
+    // App seeds scrollback from the start room's description.
+    expect(lastFrame()).toContain("A dark cavern.");
+    unmount();
+  });
+
+  it("resuming a save loads that slot's state into the embedded session", async () => {
+    const dir = tmpAdventure();
+    const resumed = { ...newGameState(adventure, "now"), turn: 7, location: "hall" };
+    await saveGame(dir, "before-boss", resumed);
+    const { lastFrame, stdin, unmount } = mountForPlay(dir);
+    await press(stdin, "p");
+    await press(stdin, DOWN); // New Game -> before-boss
+    await press(stdin, "\r");
+    await expect.poll(() => lastFrame()).toContain("turn 7");
+    unmount();
+  });
+
+  it("Escape returns focus to the sidebar while the session keeps running", async () => {
+    const dir = tmpAdventure();
+    const { lastFrame, stdin, unmount } = mountForPlay(dir);
+    await press(stdin, "p");
+    await press(stdin, "\r");
+
+    await press(stdin, ESC);
+    // Sidebar navigation (Tab) works again -> Beats category visible.
+    await press(stdin, "\t");
+    expect(lastFrame()).toContain("won-the-key");
+    unmount();
+  });
+
+  it("pressing p again re-focuses the same live session instead of restarting it", async () => {
+    const model = new FakeNarratorModel([
+      { narration: "You strike the match.", actions: [] },
+    ]);
+    const dir = tmpAdventure();
+    const { lastFrame, stdin, unmount } = mountForPlay(dir, model);
+    await press(stdin, "p");
+    await press(stdin, "\r");
+
+    // Take a turn so the session has state worth preserving.
+    await press(stdin, "strike match");
+    await press(stdin, "\r");
+    await expect.poll(() => lastFrame()).toContain("You strike the match.");
+
+    await press(stdin, ESC); // back to sidebar
+    await press(stdin, "p"); // re-focus, not restart
+
+    expect(lastFrame()).toContain("You strike the match."); // scrollback preserved
+    unmount();
+  });
+
+  it("quitting the embedded session (/quit) returns to the previously selected entity", async () => {
+    const dir = tmpAdventure();
+    const { lastFrame, stdin, unmount } = mountForPlay(dir);
+    await press(stdin, "p");
+    await press(stdin, "\r");
+    expect(lastFrame()).toContain("A dark cavern.");
+
+    await press(stdin, "/quit");
+    await press(stdin, "\r");
+
+    // Back to the sidebar/content pane (Adventure Config, the default selection).
+    await expect.poll(() => lastFrame()).toContain("Cave of Echoes");
     unmount();
   });
 });

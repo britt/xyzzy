@@ -4,10 +4,17 @@ import {
   Adventure as AdventureSchema,
   type Adventure,
   type Character,
+  type GameState,
   type Item,
   type Room,
   type StoryBeat,
 } from "../world/schema.js";
+import { App } from "./App.js";
+import type { NarratorModel } from "../llm/NarratorModel.js";
+import type { Detector } from "../llm/Detector.js";
+import type { ProviderConfig } from "../config/schema.js";
+import { listSaves, loadGame } from "../engine/save.js";
+import { newGameState } from "../engine/state.js";
 import { readAdventureFile, resolveAdventureFile } from "../world/loader.js";
 import { formatIssues, validateAdventure, type ValidationIssue } from "../world/validator.js";
 import { entityFilePath, type EntityKind } from "../world/entityWriter.js";
@@ -25,7 +32,21 @@ export interface DevAppProps {
   adventureDir: string;
   /** injected for testability; defaults to a real $EDITOR spawn in dev.ts. */
   openEditor?: (path: string) => void;
+  /**
+   * Provider + factories for the embedded play session, mirroring `AppProps`.
+   * Optional so browsing-only callers (and the browsing tests) need not supply
+   * them; without them `p` has nothing to mount.
+   */
+  provider?: ProviderConfig;
+  makeModel?: (config: ProviderConfig) => NarratorModel;
+  makeDetector?: (config: ProviderConfig) => Detector;
+  listModels?: (config: ProviderConfig) => Promise<string[]>;
+  providers?: Record<string, ProviderConfig>;
+  saveSlot?: string;
 }
+
+/** Which pane owns the keyboard. */
+type Focus = "sidebar" | "play";
 
 type SelectionByCategory = Record<Category, number>;
 
@@ -34,6 +55,11 @@ const CONFIG_KEY = "config";
 
 function entityKey(kind: EntityKind, id: string): string {
   return `${kind}:${id}`;
+}
+
+/** Seed a fresh game, stamping the timestamp at call time. */
+function newGameStateFor(adventure: Adventure): GameState {
+  return newGameState(adventure, new Date().toISOString());
 }
 
 const INITIAL_SELECTION: SelectionByCategory = {
@@ -69,11 +95,34 @@ export function DevApp({
   adventure: initialAdventure,
   adventureDir,
   openEditor,
+  provider,
+  makeModel,
+  makeDetector,
+  listModels,
+  providers = {},
+  saveSlot = "autosave",
 }: DevAppProps) {
   const [category, setCategory] = useState<Category>("config");
   const [selection, setSelection] = useState<SelectionByCategory>(INITIAL_SELECTION);
   const [adventure, setAdventure] = useState(initialAdventure);
   const [issues, setIssues] = useState<Record<string, ValidationIssue[]>>({});
+  const [focus, setFocus] = useState<Focus>("sidebar");
+  const [playState, setPlayState] = useState<GameState | null>(null);
+  const [submenuOpen, setSubmenuOpen] = useState(false);
+  const [submenuIndex, setSubmenuIndex] = useState(0);
+
+  const saves = listSaves(adventureDir);
+  const submenuOptions = ["New Game", ...saves];
+
+  async function startPlay(optionIndex: number) {
+    const state =
+      optionIndex === 0
+        ? newGameStateFor(adventure)
+        : await loadGame(adventureDir, saves[optionIndex - 1]!);
+    setPlayState(state);
+    setSubmenuOpen(false);
+    setFocus("play");
+  }
 
   const entries = entriesForCategory(adventure, category);
   const index = entries.length === 0 ? 0 : Math.min(selection[category], entries.length - 1);
@@ -133,6 +182,38 @@ export function DevApp({
   }
 
   useInput((input, key) => {
+    if (key.escape) {
+      setSubmenuOpen(false);
+      setFocus("sidebar");
+      return;
+    }
+    if (submenuOpen) {
+      if (key.downArrow) {
+        setSubmenuIndex((i) => Math.min(submenuOptions.length - 1, i + 1));
+        return;
+      }
+      if (key.upArrow) {
+        setSubmenuIndex((i) => Math.max(0, i - 1));
+        return;
+      }
+      if (key.return) {
+        void startPlay(submenuIndex);
+        return;
+      }
+      return;
+    }
+    if (input === "p") {
+      // A live session re-focuses; otherwise offer New Game / Resume.
+      if (playState) setFocus("play");
+      else {
+        setSubmenuIndex(0);
+        setSubmenuOpen(true);
+      }
+      return;
+    }
+    // Everything below belongs to the embedded App while it has focus.
+    if (focus === "play") return;
+
     if (key.tab) {
       const step = key.shift ? -1 : 1;
       const i = CATEGORIES.indexOf(category);
@@ -182,7 +263,33 @@ export function DevApp({
         ))}
       </Box>
       <Box flexDirection="column" flexGrow={1}>
-        {currentIssues ? (
+        {submenuOpen ? (
+          <Box flexDirection="column">
+            <Text>Play:</Text>
+            {submenuOptions.map((opt, i) => (
+              <Text key={opt} inverse={i === submenuIndex}>
+                {opt}
+              </Text>
+            ))}
+          </Box>
+        ) : playState && provider && makeModel && listModels ? (
+          <App
+            adventure={adventure}
+            initialState={playState}
+            provider={provider}
+            makeModel={makeModel}
+            makeDetector={makeDetector}
+            listModels={listModels}
+            providers={providers}
+            adventureDir={adventureDir}
+            saveSlot={saveSlot}
+            inputActive={focus === "play"}
+            onQuit={() => {
+              setPlayState(null);
+              setFocus("sidebar");
+            }}
+          />
+        ) : currentIssues ? (
           <>
             <Text color="red">⚠ Validation failed:</Text>
             <Text color="red">{formatIssues(currentIssues)}</Text>
