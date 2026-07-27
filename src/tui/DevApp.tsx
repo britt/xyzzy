@@ -446,12 +446,21 @@ export function DevApp({
   return (
     <Box flexDirection="column" width={layout.width} height={layout.height}>
       <Box flexDirection="row" flexGrow={1} overflow="hidden">
+        {/* Right border rules the full pane height on its own, so it tracks
+            resizes without padding a character per row. */}
         <Box
           flexDirection="column"
           width={layout.sidebarWidth}
           flexShrink={0}
           marginRight={2}
           overflow="hidden"
+          borderStyle="single"
+          borderRight
+          borderTop={false}
+          borderBottom={false}
+          borderLeft={false}
+          borderRightColor="cyan"
+          borderRightDimColor
         >
           {CATEGORIES.map((c) => (
             <Text key={c} inverse={c === category}>

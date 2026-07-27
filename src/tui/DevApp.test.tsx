@@ -1007,3 +1007,33 @@ describe("DevApp footer divider", () => {
     app.unmount();
   });
 });
+
+describe("DevApp sidebar divider", () => {
+  it("draws a vertical rule down the full height between the panes", () => {
+    const { stdout, app } = renderSized(74, 14);
+    const lines = frameText(stdout).split("\n");
+    // Every pane row (all but the footer rule and key list) carries the rule
+    // at the same column.
+    const paneRows = lines.slice(0, -2);
+    const columns = paneRows.map((l) => l.indexOf("│"));
+    expect(columns.every((c) => c >= 0)).toBe(true);
+    expect(new Set(columns).size).toBe(1);
+    app.unmount();
+  });
+
+  it("keeps the rule to the left of the content pane's text", () => {
+    const { stdout, app } = renderSized(74, 14);
+    const line = frameText(stdout)
+      .split("\n")
+      .find((l) => l.includes("Cave of Echoes"))!;
+    expect(line.indexOf("│")).toBeLessThan(line.indexOf("Cave of Echoes"));
+    app.unmount();
+  });
+
+  it("still fits the terminal exactly with both rules present", () => {
+    const { stdout, app } = renderSized(74, 14);
+    expect(frameGeometry(stdout).height).toBe(13);
+    expect(frameGeometry(stdout).maxWidth).toBeLessThanOrEqual(74);
+    app.unmount();
+  });
+});
