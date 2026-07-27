@@ -50,6 +50,7 @@ function mount(
   providers: Record<string, ProviderConfig> = {},
   makeDetector?: (config: ProviderConfig) => Detector,
   adventureDir: string = mkdtempSync(join(tmpdir(), "xyzzy-tui-")),
+  extra: { onQuit?: () => void; inputActive?: boolean } = {},
 ) {
   return render(
     <App
@@ -62,6 +63,8 @@ function mount(
       providers={providers}
       adventureDir={adventureDir}
       saveSlot="autosave"
+      onQuit={extra.onQuit}
+      inputActive={extra.inputActive}
     />,
   );
 }
@@ -605,6 +608,89 @@ describe("timing display", () => {
     await type(stdin, "push rock");
     await expect.poll(() => lastFrame()).toContain("boom");
     expect(lastFrame()).toMatch(/Turn \d/); // timing line persists through the failed turn
+    unmount();
+  });
+});
+
+describe("embeddability", () => {
+  it("/quit calls the onQuit override instead of exiting the Ink root, when provided", async () => {
+    let quitCalls = 0;
+    const { stdin, unmount } = mount(
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      { onQuit: () => quitCalls++ },
+    );
+
+    await type(stdin, "/quit");
+
+    expect(quitCalls).toBe(1);
+    unmount();
+  });
+
+  it("/quit exits the Ink app when no onQuit override is provided (default behavior)", async () => {
+    const { lastFrame, stdin, unmount } = mount();
+
+    await type(stdin, "/quit");
+    const frameAtQuit = lastFrame();
+
+    // The app has exited; further input has no visible effect.
+    await type(stdin, "/help");
+    expect(lastFrame()).toBe(frameAtQuit);
+    unmount();
+  });
+
+  it("does not react to input when inputActive is false", async () => {
+    const { lastFrame, stdin, unmount } = mount(
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      { inputActive: false },
+    );
+    const before = lastFrame();
+
+    await type(stdin, "/help");
+
+    // No new output — the input line is inactive, so nothing was submitted.
+    expect(lastFrame()).toBe(before);
+    unmount();
+  });
+
+  it("reacts to input again once inputActive becomes true", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "xyzzy-tui-"));
+    const { lastFrame, stdin, rerender, unmount } = mount(
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      dir,
+      { inputActive: false },
+    );
+
+    rerender(
+      <App
+        adventure={adventure}
+        initialState={newGameState(adventure, "now")}
+        provider={provider}
+        makeModel={() => new FakeNarratorModel()}
+        listModels={async () => []}
+        providers={{}}
+        adventureDir={dir}
+        saveSlot="autosave"
+        inputActive={true}
+      />,
+    );
+
+    await type(stdin, "/help");
+
+    await expect.poll(() => lastFrame()).toContain("/quit");
     unmount();
   });
 });

@@ -32,6 +32,20 @@ export interface AppProps {
   adventureDir: string;
   /** autosave slot */
   saveSlot: string;
+  /**
+   * Called instead of exiting the Ink root when `/quit` runs. Lets an
+   * embedding parent (e.g. `DevApp`'s play-focus mode) unmount just this
+   * instance instead of tearing down the whole process. Omit for standalone
+   * `xyzzy play`, where `/quit` should exit normally.
+   */
+  onQuit?: () => void;
+  /**
+   * Whether the input line accepts keystrokes. Defaults to `true`. An
+   * embedding parent sets this to `false` while a different pane has focus,
+   * so this instance keeps rendering (scrollback, status bar) without
+   * stealing input meant for the sidebar.
+   */
+  inputActive?: boolean;
 }
 
 /**
@@ -142,6 +156,8 @@ export function App({
   providers,
   adventureDir,
   saveSlot,
+  onQuit,
+  inputActive = true,
 }: AppProps) {
   const { exit } = useApp();
   const [state, setState] = useState(initialState);
@@ -197,7 +213,8 @@ export function App({
   async function handleMeta(command: string, arg: string): Promise<boolean> {
     switch (command) {
       case "/quit":
-        exit();
+        if (onQuit) onQuit();
+        else exit();
         return true;
       case "/help":
         push("system", HELP);
@@ -451,7 +468,7 @@ export function App({
       ) : (
         <Box>
           <Text>{"> "}</Text>
-          <PromptInput history={history} onSubmit={submit} />
+          <PromptInput history={history} onSubmit={submit} isActive={inputActive} />
         </Box>
       )}
     </Box>
