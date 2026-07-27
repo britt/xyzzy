@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Box, Text, useInput } from "ink";
+import { Box, Text, useApp, useInput } from "ink";
 import {
   Adventure as AdventureSchema,
   type Adventure,
@@ -102,6 +102,7 @@ export function DevApp({
   providers = {},
   saveSlot = "autosave",
 }: DevAppProps) {
+  const { exit } = useApp();
   const [category, setCategory] = useState<Category>("config");
   const [selection, setSelection] = useState<SelectionByCategory>(INITIAL_SELECTION);
   const [adventure, setAdventure] = useState(initialAdventure);
@@ -211,9 +212,14 @@ export function DevApp({
       }
       return;
     }
-    // Everything below belongs to the embedded App while it has focus.
+    // Everything below belongs to the embedded App while it has focus — so a
+    // literal "q" typed at the play prompt isn't a global quit.
     if (focus === "play") return;
 
+    if (input === "q") {
+      exit();
+      return;
+    }
     if (key.tab) {
       const step = key.shift ? -1 : 1;
       const i = CATEGORIES.indexOf(category);

@@ -437,6 +437,30 @@ describe("DevApp play-focus mode", () => {
     unmount();
   });
 
+  it("q quits the whole tool when the sidebar has focus", async () => {
+    const dir = tmpAdventure();
+    const { lastFrame, stdin, unmount } = mountForPlay(dir);
+    await press(stdin, "q");
+    const frameAtQuit = lastFrame();
+    await press(stdin, "\t"); // no longer has any effect — the app exited
+    expect(lastFrame()).toBe(frameAtQuit);
+    unmount();
+  });
+
+  it("q while play has focus is typed into the play session, not treated as quit", async () => {
+    const dir = tmpAdventure();
+    const { lastFrame, stdin, unmount } = mountForPlay(dir);
+    await press(stdin, "p");
+    await press(stdin, "\r");
+    await press(stdin, "q"); // types "q" into the play input line
+
+    // The tool is still running — Escape and sidebar navigation still work.
+    await press(stdin, ESC);
+    await press(stdin, "\t");
+    expect(lastFrame()).toContain("won-the-key");
+    unmount();
+  });
+
   it("quitting the embedded session (/quit) returns to the previously selected entity", async () => {
     const dir = tmpAdventure();
     const { lastFrame, stdin, unmount } = mountForPlay(dir);
