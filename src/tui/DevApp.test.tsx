@@ -657,7 +657,16 @@ function renderSized(
       adventureDir="/tmp/does-not-matter"
       {...props}
     />,
-    { stdout: stdout as never, stdin: stdin as never, patchConsole: false },
+    {
+      stdout: stdout as never,
+      stdin: stdin as never,
+      patchConsole: false,
+      // Ink writes no live frame when it detects CI (`isInCi` in ink/build/ink.js),
+      // so without this the harness sees an empty stdout on GitHub Actions.
+      // `debug` is checked ahead of that branch — and disables the 32ms render
+      // throttle, making frames synchronous. ink-testing-library does the same.
+      debug: true,
+    },
   );
   return { stdout, stdin, app };
 }
