@@ -1,6 +1,6 @@
 {
   "name": "@britt/xyzzy",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "A toolkit for building and playing text adventures with local LLMs.",
   "keywords": [
     "text-adventure",
