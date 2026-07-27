@@ -298,3 +298,49 @@
 - Notes: a PR (#20) was opened for this branch from the Claude Code UI
   before this task started; no new PR was created, these commits update
   it directly.
+
+## `xyzzy dev` Multi-Pane Development TUI (Tasks 1-10) - COMPLETE
+
+- Started: 2026-07-27
+- Plan: `docs/plans/2026-07-27-dev-tool-tui-plan.md` (design:
+  `docs/plans/2026-07-27-dev-tool-tui-design.md`)
+- Tests: 339 passing, 0 failing (up from 287 at branch start; +52).
+  Every task went RED first and was confirmed to fail for the intended
+  reason before any production code was written.
+  - Task 1 `entityCatalog.ts` — 8 tests (category order, labels, per-category
+    entry listing, empty adventure)
+  - Task 2 `renderFields.ts` — 12 tests (all four entity kinds + config,
+    set/unset scalars, dispatch)
+  - Task 3 `App.tsx` embeddability — 4 tests (`onQuit` override, default
+    exit, inactive input, reactivation)
+  - Tasks 4-7 `DevApp.tsx` — 28 tests (sidebar navigation, editing/reload/
+    validation, play-focus mode, whole-tool quit)
+- Coverage (new/changed files): `entityCatalog.ts` 100/86.66/100/100,
+  `renderFields.ts` 100/100/100/100, `DevApp.tsx` 100/97.97/100/100.
+  `App.tsx` branch coverage improved 77.67% -> 79.48% (the remaining
+  shortfall against the 85% bar is pre-existing in untouched paths;
+  measured against commit 32c5e7f to confirm). `dev.ts` is 0% by the same
+  convention as `play.ts` (also 0%) — thin Ink/TTY orchestration glue with
+  no test file, verified manually instead.
+- Build: Successful (`bun run build`)
+- Linting: Clean (`bun run lint`), typecheck clean (`bun run typecheck`)
+- Completed: 2026-07-27
+- Notes: Five defects in the plan were found and corrected during
+  execution, four of them caught by the RED step:
+  1. Plan's DevApp tests wrote to stdin immediately after mount, so Ink's
+     `useInput` had not yet subscribed and the first keystroke of every
+     test was dropped (7/10 Task 4 tests failed). Fixed with a `press()`
+     helper carrying the same leading tick `App.test.tsx`'s `type()` uses.
+  2. Escape and arrow-key literals had lost their `\x1b` prefix in the
+     plan text (`stdin.write("")`, `stdin.write("[B")`).
+  3. Task 6 asserted the seeded narration was the premise (`"A dark
+     cave."`); `App.tsx` seeds from the start room's description, so the
+     correct expectation is `"A dark cavern."`.
+  4. `editSelected` called `readAdventureFile` unguarded inside a key
+     handler; a YAML syntax error saved from `$EDITOR` would have thrown
+     and torn down the whole TUI. Now caught and surfaced through the same
+     inline banner, with a regression test.
+  5. `Escape` left the play submenu open while moving focus away. It now
+     closes the submenu too.
+- Outstanding: `VERIFICATION_PLAN.md` Scenario 9 requires a real TTY and
+  has NOT been run — it needs to be driven manually by the developer.
