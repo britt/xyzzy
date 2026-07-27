@@ -50,7 +50,12 @@ function mount(
   providers: Record<string, ProviderConfig> = {},
   makeDetector?: (config: ProviderConfig) => Detector,
   adventureDir: string = mkdtempSync(join(tmpdir(), "xyzzy-tui-")),
-  extra: { onQuit?: () => void; inputActive?: boolean } = {},
+  extra: {
+    onQuit?: () => void;
+    inputActive?: boolean;
+    scrollbackMode?: "native" | "bounded";
+    scrollbackViewport?: { rows: number; width: number };
+  } = {},
 ) {
   return render(
     <App
@@ -65,6 +70,8 @@ function mount(
       saveSlot="autosave"
       onQuit={extra.onQuit}
       inputActive={extra.inputActive}
+      scrollbackMode={extra.scrollbackMode}
+      scrollbackViewport={extra.scrollbackViewport}
     />,
   );
 }
@@ -691,6 +698,96 @@ describe("embeddability", () => {
     await type(stdin, "/help");
 
     await expect.poll(() => lastFrame()).toContain("/quit");
+    unmount();
+  });
+});
+
+describe("scrollback modes", () => {
+  /** A model that narrates a distinct, greppable line per turn. */
+  function countingModel(): NarratorModel {
+    let n = 0;
+    return {
+      async generate() {
+        n += 1;
+        return { narration: `NARRATION-${n}`, actions: [] };
+      },
+    };
+  }
+
+  async function runTurns(
+    stdin: { write: (s: string) => void },
+    count: number,
+  ): Promise<void> {
+    for (let i = 1; i <= count; i++) await type(stdin, `look${i}`);
+  }
+
+  it("native mode keeps the whole transcript in the output, so terminal scrollback owns history", async () => {
+    const model = countingModel();
+    const { lastFrame, stdin, unmount } = mount(model, () => model);
+
+    await runTurns(stdin, 3);
+    await expect.poll(() => lastFrame()).toContain("NARRATION-3");
+
+    // The seeded opening line and the earliest narration are both still there.
+    expect(lastFrame()).toContain("A cold stone chamber.");
+    expect(lastFrame()).toContain("NARRATION-1");
+    unmount();
+  });
+
+  it("bounded mode drops the oldest entries that no longer fit the panel", async () => {
+    const model = countingModel();
+    const { lastFrame, stdin, unmount } = mount(
+      model,
+      () => model,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      { scrollbackMode: "bounded", scrollbackViewport: { rows: 6, width: 60 } },
+    );
+
+    await runTurns(stdin, 3);
+    await expect.poll(() => lastFrame()).toContain("NARRATION-3");
+
+    // Only the newest few entries fit; the opening line has scrolled out.
+    expect(lastFrame()).not.toContain("A cold stone chamber.");
+    expect(lastFrame()).not.toContain("NARRATION-1");
+    unmount();
+  });
+
+  it("bounded mode still shows the status bar and input line below the panel", async () => {
+    const model = countingModel();
+    const { lastFrame, stdin, unmount } = mount(
+      model,
+      () => model,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      { scrollbackMode: "bounded", scrollbackViewport: { rows: 6, width: 60 } },
+    );
+
+    await runTurns(stdin, 3);
+    await expect.poll(() => lastFrame()).toContain("NARRATION-3");
+    expect(lastFrame()).toContain("Cave · Start · turn 3");
+    unmount();
+  });
+
+  it("bounded mode with no viewport falls back to showing everything", async () => {
+    const model = countingModel();
+    const { lastFrame, stdin, unmount } = mount(
+      model,
+      () => model,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      { scrollbackMode: "bounded" },
+    );
+
+    await runTurns(stdin, 2);
+    await expect.poll(() => lastFrame()).toContain("NARRATION-2");
+    expect(lastFrame()).toContain("A cold stone chamber.");
     unmount();
   });
 });

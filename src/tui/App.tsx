@@ -9,6 +9,7 @@ import { runTurn, type TurnTiming } from "../engine/turnLoop.js";
 import { listSaves, loadGame, saveGame } from "../engine/save.js";
 import { buildMap } from "../engine/asciiMap.js";
 import { PromptInput } from "./PromptInput.js";
+import { visibleScrollback } from "./scrollback.js";
 import { log, logPath, userMessage } from "../util/log.js";
 
 export interface AppProps {
@@ -46,6 +47,26 @@ export interface AppProps {
    * stealing input meant for the sidebar.
    */
   inputActive?: boolean;
+  /**
+   * How the transcript is rendered.
+   *
+   * `"native"` (the default) uses Ink's `<Static>`, so each line is written
+   * permanently above the live frame and ends up in the terminal's own
+   * scrollback — right for standalone `xyzzy play`, where the terminal is the
+   * scroll surface. The tradeoff is that static output always lands above
+   * everything, so nothing can be drawn around it.
+   *
+   * `"bounded"` renders the transcript as ordinary children inside a panel,
+   * showing the newest entries that fit. An embedding parent can then draw its
+   * own UI around the play area.
+   */
+  scrollbackMode?: "native" | "bounded";
+  /**
+   * Rows and width available to the transcript in bounded mode. Omit to let
+   * the panel grow to its content (which will eventually outgrow the
+   * terminal — supply this whenever the height is known).
+   */
+  scrollbackViewport?: { rows: number; width: number };
 }
 
 /**
@@ -158,6 +179,8 @@ export function App({
   saveSlot,
   onQuit,
   inputActive = true,
+  scrollbackMode = "native",
+  scrollbackViewport,
 }: AppProps) {
   const { exit } = useApp();
   const [state, setState] = useState(initialState);
@@ -418,26 +441,35 @@ export function App({
     }
   }
 
+  const renderLine = (line: Line) => (
+    <Box key={line.key} marginBottom={1}>
+      <Text
+        color={
+          line.role === "player"
+            ? "cyan"
+            : line.role === "system"
+              ? "yellow"
+              : undefined
+        }
+        dimColor={line.role === "system"}
+      >
+        {line.text}
+      </Text>
+    </Box>
+  );
+
   return (
     <Box flexDirection="column">
-      <Static items={lines}>
-        {(line) => (
-          <Box key={line.key} marginBottom={1}>
-            <Text
-              color={
-                line.role === "player"
-                  ? "cyan"
-                  : line.role === "system"
-                    ? "yellow"
-                    : undefined
-              }
-              dimColor={line.role === "system"}
-            >
-              {line.text}
-            </Text>
-          </Box>
-        )}
-      </Static>
+      {scrollbackMode === "bounded" ? (
+        <Box flexDirection="column" flexGrow={1} overflow="hidden">
+          {visibleScrollback(lines, {
+            rows: scrollbackViewport?.rows,
+            width: scrollbackViewport?.width ?? 80,
+          }).map(renderLine)}
+        </Box>
+      ) : (
+        <Static items={lines}>{renderLine}</Static>
+      )}
 
       <Box>
         <Text dimColor>

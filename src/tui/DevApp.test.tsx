@@ -585,13 +585,24 @@ class SizedStdout extends EventEmitter {
 
 class TtyStdin extends EventEmitter {
   isTTY = true;
+  private data: string | null = null;
   setEncoding() {}
   setRawMode() {}
   resume() {}
   pause() {}
   ref() {}
   unref() {}
-  read = () => null;
+  // Mirrors ink-testing-library's stdin: hand Ink the chunk via `readable`.
+  write = (data: string) => {
+    this.data = data;
+    this.emit("readable");
+    this.emit("data", data);
+  };
+  read = () => {
+    const { data } = this;
+    this.data = null;
+    return data;
+  };
 }
 
 const ANSI = new RegExp(`${String.fromCharCode(27)}\\[[0-9;]*m`, "g");
@@ -602,14 +613,22 @@ function frameGeometry(stdout: SizedStdout) {
   return { height: lines.length, maxWidth: Math.max(...widths) };
 }
 
-function renderSized(columns: number, rows: number) {
+function renderSized(
+  columns: number,
+  rows: number,
+  props: Partial<React.ComponentProps<typeof DevApp>> = {},
+) {
   const stdout = new SizedStdout(columns, rows);
   const stdin = new TtyStdin();
   const app = inkRender(
-    <DevApp adventure={adventure} adventureDir="/tmp/does-not-matter" />,
+    <DevApp
+      adventure={adventure}
+      adventureDir="/tmp/does-not-matter"
+      {...props}
+    />,
     { stdout: stdout as never, stdin: stdin as never, patchConsole: false },
   );
-  return { stdout, app };
+  return { stdout, stdin, app };
 }
 
 describe("DevApp fills the terminal", () => {
@@ -657,6 +676,72 @@ describe("DevApp fills the terminal", () => {
     // Ink throttles renders at 32ms with a trailing edge, so poll rather than
     // assuming the redraw has already landed.
     await expect.poll(() => frameGeometry(stdout).height).toBe(49);
+    app.unmount();
+  });
+});
+
+describe("DevApp keeps an embedded play session inside the layout", () => {
+  /** Narrates a distinct, greppable line per turn. */
+  function countingModel(): NarratorModel {
+    let n = 0;
+    return {
+      async generate() {
+        n += 1;
+        return { narration: `NARRATION-${n}`, actions: [] };
+      },
+    };
+  }
+
+  async function startSession(stdin: TtyStdin) {
+    await press(stdin, "p");
+    await press(stdin, "\r"); // New Game
+  }
+
+  it("does not grow past the terminal height as the transcript accumulates", async () => {
+    const dir = tmpAdventure();
+    const model = countingModel();
+    const { stdout, stdin, app } = renderSized(100, 24, {
+      adventureDir: dir,
+      provider,
+      makeModel: () => model,
+      listModels: async () => [],
+      providers: {},
+    });
+
+    await startSession(stdin);
+    for (let i = 1; i <= 8; i++) {
+      await press(stdin, `look${i}`);
+      await press(stdin, "\r");
+    }
+    await expect.poll(() => stdout.lastFrame()).toContain("NARRATION-8");
+
+    // The whole screen still fits: without bounding, <Static> plus a growing
+    // transcript would push this past `rows` and trip Ink's clear-and-redraw.
+    expect(frameGeometry(stdout).height).toBeLessThan(24);
+    app.unmount();
+  });
+
+  it("keeps the sidebar visible alongside a long transcript", async () => {
+    const dir = tmpAdventure();
+    const model = countingModel();
+    const { stdout, stdin, app } = renderSized(100, 24, {
+      adventureDir: dir,
+      provider,
+      makeModel: () => model,
+      listModels: async () => [],
+      providers: {},
+    });
+
+    await startSession(stdin);
+    for (let i = 1; i <= 8; i++) {
+      await press(stdin, `look${i}`);
+      await press(stdin, "\r");
+    }
+    await expect.poll(() => stdout.lastFrame()).toContain("NARRATION-8");
+
+    const frame = stdout.lastFrame();
+    expect(frame).toContain("Adventure Config");
+    expect(frame).toContain("Rooms");
     app.unmount();
   });
 });

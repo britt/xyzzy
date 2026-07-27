@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
   DEFAULT_SIDEBAR_WIDTH,
+  PLAY_CHROME_ROWS,
+  SIDEBAR_GAP,
+  playViewport,
   MAX_SIDEBAR_WIDTH,
   MIN_SIDEBAR_WIDTH,
   devLayout,
@@ -40,5 +43,25 @@ describe("devLayout", () => {
     const layout = devLayout(24, 40);
     expect(layout.sidebarWidth).toBeLessThan(24);
     expect(layout.sidebarWidth).toBeGreaterThan(0);
+  });
+});
+
+describe("playViewport", () => {
+  it("gives the play pane the content pane's interior, less its own chrome", () => {
+    const layout = devLayout(120, 40); // width 120, height 39, sidebar 30
+    expect(playViewport(layout)).toEqual({
+      width: 120 - 30 - SIDEBAR_GAP,
+      rows: 39 - PLAY_CHROME_ROWS,
+    });
+  });
+
+  it("is undefined when the terminal size is unknown, leaving the panel unbounded", () => {
+    expect(playViewport(devLayout(undefined, undefined))).toBeUndefined();
+  });
+
+  it("never returns a non-positive width or height", () => {
+    const viewport = playViewport(devLayout(10, 3));
+    expect(viewport!.width).toBeGreaterThan(0);
+    expect(viewport!.rows).toBeGreaterThan(0);
   });
 });

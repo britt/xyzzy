@@ -7,6 +7,8 @@ export const MIN_SIDEBAR_WIDTH = 18;
 export const MAX_SIDEBAR_WIDTH = 32;
 /** Used when the terminal size can't be determined (non-TTY, test stdout). */
 export const DEFAULT_SIDEBAR_WIDTH = 26;
+/** Columns between the sidebar and the content pane. */
+export const SIDEBAR_GAP = 2;
 
 export interface DevLayout {
   /** Full terminal width, or undefined to let Ink size to content. */
@@ -49,4 +51,22 @@ export function devLayout(
   }
 
   return { width, height, sidebarWidth };
+}
+
+/** Rows the play pane spends on its status bar and input line. */
+export const PLAY_CHROME_ROWS = 3;
+
+/**
+ * Viewport for an embedded play session's bounded scrollback: the content
+ * pane's interior, less the rows its own status bar and input line occupy.
+ * Undefined when the terminal size is unknown, which leaves the panel to size
+ * itself to its content.
+ */
+export function playViewport(
+  layout: DevLayout,
+): { rows: number; width: number } | undefined {
+  if (layout.height === undefined || layout.width === undefined) return undefined;
+  const width = Math.max(1, layout.width - layout.sidebarWidth - SIDEBAR_GAP);
+  const rows = Math.max(1, layout.height - PLAY_CHROME_ROWS);
+  return { rows, width };
 }

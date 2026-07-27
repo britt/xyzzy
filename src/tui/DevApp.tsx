@@ -30,7 +30,7 @@ import {
   type Category,
 } from "./dev/entityCatalog.js";
 import { renderConfigFields, renderFieldsFor, type FieldRow } from "./dev/renderFields.js";
-import { devLayout } from "./dev/layout.js";
+import { devLayout, playViewport } from "./dev/layout.js";
 
 export interface DevAppProps {
   adventure: Adventure;
@@ -372,6 +372,10 @@ export function DevApp({
             adventureDir={adventureDir}
             saveSlot={saveSlot}
             inputActive={focus === "play"}
+            // Embedded, so the transcript must stay inside the content pane
+            // rather than being written above the whole screen via <Static>.
+            scrollbackMode="bounded"
+            scrollbackViewport={playViewport(layout)}
             onQuit={() => {
               setPlayState(null);
               setFocus("sidebar");
