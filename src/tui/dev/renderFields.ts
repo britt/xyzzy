@@ -2,12 +2,21 @@ import type { Adventure, Character, Item, Room, StoryBeat } from "../../world/sc
 import { ENTITY_FIELDS } from "../../world/entityWriter.js";
 import type { Category } from "./entityCatalog.js";
 
-export interface FieldRow {
-  label: string;
-  value: string;
-  /** true when this row is an unset/empty placeholder rather than real data. */
-  dim: boolean;
-}
+/**
+ * The content pane's model. Splitting rows by shape — rather than emitting one
+ * flat `label: value` string — lets the view give each kind its own treatment:
+ * a heading to anchor the entity, prose in an indented block that can breathe,
+ * and structural data as a bulleted list instead of a crammed comma-join.
+ */
+export type FieldRow =
+  /** Anchors the pane: what you're looking at, and what identifies it. */
+  | { kind: "heading"; title: string; subtitle: string }
+  /** A short value that reads well beside its label. */
+  | { kind: "scalar"; label: string; value: string; dim: boolean }
+  /** Prose (description, persona, premise) shown under its label. */
+  | { kind: "block"; label: string; value: string; dim: boolean }
+  /** Structural data; an empty list renders as a dim placeholder. */
+  | { kind: "list"; label: string; items: string[] };
 
 /** Reuse the `xyzzy new` placeholder copy so a field reads identically whether
  * you're creating it or browsing it unset. */
@@ -15,80 +24,116 @@ function placeholderFor(kind: "item" | "character" | "beat", key: string): strin
   return ENTITY_FIELDS[kind].find((f) => f.key === key)!.placeholder;
 }
 
-function scalarRow(
-  label: string,
-  value: string | undefined,
-  placeholder: string,
-): FieldRow {
+function scalar(label: string, value: string | undefined, placeholder: string): FieldRow {
   return value !== undefined
-    ? { label, value, dim: false }
-    : { label, value: placeholder, dim: true };
+    ? { kind: "scalar", label, value, dim: false }
+    : { kind: "scalar", label, value: placeholder, dim: true };
 }
 
-function listRow(label: string, values: string[]): FieldRow {
-  return values.length
-    ? { label, value: values.join(", "), dim: false }
-    : { label, value: "(none)", dim: true };
+function block(label: string, value: string | undefined, placeholder: string): FieldRow {
+  return value !== undefined
+    ? { kind: "block", label, value, dim: false }
+    : { kind: "block", label, value: placeholder, dim: true };
+}
+
+function heading(title: string, subtitle: string): FieldRow {
+  return { kind: "heading", title, subtitle };
+}
+
+function plural(count: number, singular: string): string {
+  return `${count} ${singular}${count === 1 ? "" : "s"}`;
+}
+
+/** The id an action acts on, for a one-line effect summary. */
+function effectTarget(effect: Record<string, unknown>): string | undefined {
+  for (const key of ["key", "room", "item", "character", "beat", "interaction"]) {
+    const value = effect[key];
+    if (typeof value === "string") return value;
+  }
+  return undefined;
+}
+
+function describeEffect(effect: { type: string }): string {
+  const target = effectTarget(effect as unknown as Record<string, unknown>);
+  return target ? `${effect.type} · ${target}` : effect.type;
 }
 
 export function renderRoomFields(room: Room): FieldRow[] {
-  const exits = Object.entries(room.exits ?? {});
   return [
-    { label: "Name", value: room.name, dim: false },
-    { label: "Description", value: room.description, dim: false },
-    listRow(
-      "Exits",
-      exits.map(([dir, target]) => `${dir} -> ${target}`),
-    ),
+    heading(room.name, `room · ${room.id}`),
+    block("Description", room.description, ""),
+    {
+      kind: "list",
+      label: "Exits",
+      items: Object.entries(room.exits ?? {}).map(
+        ([direction, target]) => `${direction} → ${target}`,
+      ),
+    },
   ];
 }
 
 export function renderItemFields(item: Item): FieldRow[] {
   return [
-    { label: "Name", value: item.name, dim: false },
-    { label: "Description", value: item.description, dim: false },
-    scalarRow("Location", item.location, placeholderFor("item", "location")),
+    heading(item.name, `item · ${item.id}`),
+    block("Description", item.description, ""),
+    scalar("Location", item.location, placeholderFor("item", "location")),
   ];
 }
 
 export function renderCharacterFields(character: Character): FieldRow[] {
   return [
-    { label: "Name", value: character.name, dim: false },
-    { label: "Persona", value: character.persona, dim: false },
-    scalarRow("Location", character.location, placeholderFor("character", "location")),
-    listRow("History", character.history),
-    Object.keys(character.state).length
-      ? { label: "State", value: JSON.stringify(character.state), dim: false }
-      : { label: "State", value: "(none)", dim: true },
-    listRow(
-      "Beats",
-      (character.beats ?? []).map((b) => b.id),
-    ),
-    listRow(
-      "Interactions",
-      (character.interactions ?? []).map((i) => i.id),
-    ),
+    heading(character.name, `character · ${character.id}`),
+    block("Persona", character.persona, ""),
+    scalar("Location", character.location, placeholderFor("character", "location")),
+    { kind: "list", label: "History", items: [...character.history] },
+    {
+      kind: "list",
+      label: "State",
+      items: Object.entries(character.state).map(([key, value]) => `${key}: ${value}`),
+    },
+    {
+      kind: "list",
+      label: "Beats",
+      items: (character.beats ?? []).map((beat) => beat.id),
+    },
+    {
+      kind: "list",
+      label: "Interactions",
+      items: (character.interactions ?? []).map((interaction) => interaction.id),
+    },
   ];
 }
 
 export function renderBeatFields(beat: StoryBeat): FieldRow[] {
   return [
-    { label: "id", value: beat.id, dim: false },
-    { label: "Description", value: beat.description, dim: false },
-    scalarRow("Trigger", beat.trigger, placeholderFor("beat", "trigger")),
-    beat.effects?.length
-      ? { label: "Effects", value: `${beat.effects.length} effect(s)`, dim: false }
-      : { label: "Effects", value: "(none)", dim: true },
+    heading(beat.id, "beat"),
+    block("Description", beat.description, ""),
+    block("Trigger", beat.trigger, placeholderFor("beat", "trigger")),
+    {
+      kind: "list",
+      label: "Effects",
+      items: (beat.effects ?? []).map(describeEffect),
+    },
   ];
 }
 
 export function renderConfigFields(adventure: Adventure): FieldRow[] {
+  const entities = adventure.entities;
   return [
-    { label: "Title", value: adventure.meta.title, dim: false },
-    { label: "Id", value: adventure.meta.id, dim: false },
-    { label: "Version", value: adventure.meta.version, dim: false },
-    scalarRow("Author", adventure.meta.author, "<author name>"),
-    { label: "Premise", value: adventure.premise, dim: false },
+    heading(adventure.meta.title, `adventure · ${adventure.meta.id}`),
+    { kind: "scalar", label: "Version", value: adventure.meta.version, dim: false },
+    scalar("Author", adventure.meta.author, "<author name>"),
+    block("Premise", adventure.premise, ""),
+    {
+      kind: "list",
+      label: "Contents",
+      items: [
+        plural(entities?.rooms?.length ?? 0, "room"),
+        plural(entities?.items?.length ?? 0, "item"),
+        plural(entities?.characters?.length ?? 0, "character"),
+        plural(adventure.beats?.length ?? 0, "beat"),
+      ],
+    },
   ];
 }
 

@@ -485,7 +485,7 @@ describe("DevApp play-focus mode", () => {
     await press(stdin, ESC);
     // Back to browsing the Adventure Config pane; no play session mounted.
     expect(lastFrame()).not.toContain("New Game");
-    expect(lastFrame()).toContain("Premise: A dark cave.");
+    expect(lastFrame()).toContain("A dark cave.");
     unmount();
   });
 

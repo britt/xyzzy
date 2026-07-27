@@ -10,7 +10,7 @@ import {
 import type { Adventure, Character, Item, Room, StoryBeat } from "../../world/schema.js";
 
 describe("renderRoomFields", () => {
-  it("renders name, description, and exits", () => {
+  it("leads with a heading naming the room and identifying it", () => {
     const room: Room = {
       id: "cavern",
       name: "Cavern",
@@ -18,39 +18,54 @@ describe("renderRoomFields", () => {
       exits: { north: "hall" },
     };
     expect(renderRoomFields(room)).toEqual([
-      { label: "Name", value: "Cavern", dim: false },
-      { label: "Description", value: "A dark cavern.", dim: false },
-      { label: "Exits", value: "north -> hall", dim: false },
+      { kind: "heading", title: "Cavern", subtitle: "room · cavern" },
+      { kind: "block", label: "Description", value: "A dark cavern.", dim: false },
+      { kind: "list", label: "Exits", items: ["north → hall"] },
     ]);
   });
 
-  it("renders a dim placeholder for exits when there are none", () => {
-    const room: Room = { id: "cavern", name: "Cavern", description: "d" };
-    const rows = renderRoomFields(room);
-    expect(rows.find((r) => r.label === "Exits")).toEqual({
+  it("renders every exit as its own list item", () => {
+    const room: Room = {
+      id: "cavern",
+      name: "Cavern",
+      description: "d",
+      exits: { north: "hall", down: "pit" },
+    };
+    const exits = renderRoomFields(room).find((r) => r.kind === "list")!;
+    expect(exits).toEqual({
+      kind: "list",
       label: "Exits",
-      value: "(none)",
-      dim: true,
+      items: ["north → hall", "down → pit"],
+    });
+  });
+
+  it("leaves the exits list empty when there are none", () => {
+    const room: Room = { id: "cavern", name: "Cavern", description: "d" };
+    expect(renderRoomFields(room)).toContainEqual({
+      kind: "list",
+      label: "Exits",
+      items: [],
     });
   });
 });
 
 describe("renderItemFields", () => {
-  it("renders location when set", () => {
+  it("renders description as a block and location as a scalar", () => {
     const item: Item = { id: "key", name: "Key", description: "d", location: "cavern" };
     expect(renderItemFields(item)).toEqual([
-      { label: "Name", value: "Key", dim: false },
-      { label: "Description", value: "d", dim: false },
-      { label: "Location", value: "cavern", dim: false },
+      { kind: "heading", title: "Key", subtitle: "item · key" },
+      { kind: "block", label: "Description", value: "d", dim: false },
+      { kind: "scalar", label: "Location", value: "cavern", dim: false },
     ]);
   });
 
-  it("renders a dim placeholder for an unset location", () => {
+  it("dims an unset location and shows its placeholder", () => {
     const item: Item = { id: "key", name: "Key", description: "d" };
-    const rows = renderItemFields(item);
-    const location = rows.find((r) => r.label === "Location")!;
-    expect(location.dim).toBe(true);
-    expect(location.value).toContain("room or character id");
+    const location = renderItemFields(item).find(
+      (r) => r.kind === "scalar" && r.label === "Location",
+    )!;
+    expect(location).toMatchObject({ dim: true });
+    expect("value" in location && location.value).toContain("room or character id");
   });
 });
 
@@ -63,105 +78,165 @@ describe("renderCharacterFields", () => {
     state: {},
   };
 
-  it("renders persona, location, and dim placeholders for empty structural fields", () => {
+  it("leads with a heading and renders persona as a block", () => {
     const rows = renderCharacterFields(base);
-    expect(rows).toContainEqual({ label: "Name", value: "Hermit", dim: false });
-    expect(rows).toContainEqual({ label: "Persona", value: "reclusive", dim: false });
-    expect(rows.find((r) => r.label === "Location")?.dim).toBe(true);
-    expect(rows.find((r) => r.label === "History")).toEqual({
-      label: "History",
-      value: "(none)",
-      dim: true,
+    expect(rows[0]).toEqual({
+      kind: "heading",
+      title: "Hermit",
+      subtitle: "character · hermit",
     });
-    expect(rows.find((r) => r.label === "State")).toEqual({
-      label: "State",
-      value: "(none)",
-      dim: true,
-    });
-    expect(rows.find((r) => r.label === "Beats")).toEqual({
-      label: "Beats",
-      value: "(none)",
-      dim: true,
+    expect(rows).toContainEqual({
+      kind: "block",
+      label: "Persona",
+      value: "reclusive",
+      dim: false,
     });
   });
 
-  it("renders non-empty history/state/beats/interactions", () => {
+  it("leaves structural lists empty when the character has none", () => {
+    const rows = renderCharacterFields(base);
+    for (const label of ["History", "State", "Beats", "Interactions"]) {
+      expect(rows).toContainEqual({ kind: "list", label, items: [] });
+    }
+  });
+
+  it("renders history, state, beats and interactions as list items", () => {
     const full: Character = {
       ...base,
       location: "cavern",
       history: ["met the player"],
-      state: { mood: "annoyed" },
+      state: { mood: "annoyed", trust: 10 },
       beats: [{ id: "confess", description: "d" }],
       interactions: [{ id: "offer-drink", description: "d", limit: 3 }],
     };
     const rows = renderCharacterFields(full);
-    expect(rows.find((r) => r.label === "Location")).toEqual({
+    const list = (label: string) =>
+      rows.find((r) => r.kind === "list" && r.label === label);
+
+    expect(list("History")).toEqual({
+      kind: "list",
+      label: "History",
+      items: ["met the player"],
+    });
+    expect(list("State")).toEqual({
+      kind: "list",
+      label: "State",
+      items: ["mood: annoyed", "trust: 10"],
+    });
+    expect(list("Beats")).toEqual({ kind: "list", label: "Beats", items: ["confess"] });
+    expect(list("Interactions")).toEqual({
+      kind: "list",
+      label: "Interactions",
+      items: ["offer-drink"],
+    });
+    expect(rows).toContainEqual({
+      kind: "scalar",
       label: "Location",
       value: "cavern",
       dim: false,
     });
-    expect(rows.find((r) => r.label === "History")?.value).toBe("met the player");
-    expect(rows.find((r) => r.label === "State")?.value).toContain("mood");
-    expect(rows.find((r) => r.label === "Beats")?.value).toBe("confess");
-    expect(rows.find((r) => r.label === "Interactions")?.value).toBe("offer-drink");
   });
 });
 
 describe("renderBeatFields", () => {
-  it("renders id (not name), description, trigger, and effects", () => {
+  it("uses the beat's id as its heading, since beats have no name", () => {
     const beat: StoryBeat = { id: "won-the-key", description: "d", trigger: "t" };
     expect(renderBeatFields(beat)).toEqual([
-      { label: "id", value: "won-the-key", dim: false },
-      { label: "Description", value: "d", dim: false },
-      { label: "Trigger", value: "t", dim: false },
-      { label: "Effects", value: "(none)", dim: true },
+      { kind: "heading", title: "won-the-key", subtitle: "beat" },
+      { kind: "block", label: "Description", value: "d", dim: false },
+      { kind: "block", label: "Trigger", value: "t", dim: false },
+      { kind: "list", label: "Effects", items: [] },
     ]);
   });
 
-  it("renders a dim placeholder for an unset trigger", () => {
+  it("dims an unset trigger and shows its placeholder", () => {
     const beat: StoryBeat = { id: "b", description: "d" };
-    const rows = renderBeatFields(beat);
-    expect(rows.find((r) => r.label === "Trigger")?.dim).toBe(true);
+    const trigger = renderBeatFields(beat).find(
+      (r) => r.kind === "block" && r.label === "Trigger",
+    )!;
+    expect(trigger).toMatchObject({ dim: true });
   });
 
-  it("summarizes effects when present", () => {
+  it("describes each effect by type and the id it acts on", () => {
     const beat: StoryBeat = {
       id: "b",
       description: "d",
-      effects: [{ type: "setFlag", key: "k", value: true }],
+      effects: [
+        { type: "setFlag", key: "lit", value: true },
+        { type: "moveTo", room: "cavern" },
+      ],
     };
-    expect(renderBeatFields(beat).find((r) => r.label === "Effects")).toEqual({
+    expect(renderBeatFields(beat)).toContainEqual({
+      kind: "list",
       label: "Effects",
-      value: "1 effect(s)",
-      dim: false,
+      items: ["setFlag · lit", "moveTo · cavern"],
     });
   });
 });
 
 describe("renderConfigFields", () => {
-  it("renders meta and premise fields", () => {
-    const adventure: Adventure = {
-      meta: { id: "a", title: "A Title", version: "1", author: "Britt" },
-      premise: "A premise.",
-      start: {},
-    };
-    const rows = renderConfigFields(adventure);
-    expect(rows).toContainEqual({ label: "Title", value: "A Title", dim: false });
-    expect(rows).toContainEqual({ label: "Id", value: "a", dim: false });
-    expect(rows).toContainEqual({ label: "Version", value: "1", dim: false });
-    expect(rows).toContainEqual({ label: "Author", value: "Britt", dim: false });
-    expect(rows).toContainEqual({ label: "Premise", value: "A premise.", dim: false });
+  const adventure: Adventure = {
+    meta: { id: "a", title: "A Title", version: "1", author: "Britt" },
+    premise: "A premise.",
+    start: {},
+    entities: {
+      rooms: [
+        { id: "r1", name: "R1", description: "d" },
+        { id: "r2", name: "R2", description: "d" },
+      ],
+      items: [{ id: "i1", name: "I1", description: "d" }],
+    },
+    beats: [{ id: "b1", description: "d" }],
+  };
+
+  it("leads with the adventure's title and id", () => {
+    expect(renderConfigFields(adventure)[0]).toEqual({
+      kind: "heading",
+      title: "A Title",
+      subtitle: "adventure · a",
+    });
   });
 
-  it("renders a dim placeholder for an unset author", () => {
-    const adventure: Adventure = {
+  it("renders version, author and premise", () => {
+    const rows = renderConfigFields(adventure);
+    expect(rows).toContainEqual({
+      kind: "scalar",
+      label: "Version",
+      value: "1",
+      dim: false,
+    });
+    expect(rows).toContainEqual({
+      kind: "scalar",
+      label: "Author",
+      value: "Britt",
+      dim: false,
+    });
+    expect(rows).toContainEqual({
+      kind: "block",
+      label: "Premise",
+      value: "A premise.",
+      dim: false,
+    });
+  });
+
+  it("summarises what the adventure contains, pluralised", () => {
+    expect(renderConfigFields(adventure)).toContainEqual({
+      kind: "list",
+      label: "Contents",
+      items: ["2 rooms", "1 item", "0 characters", "1 beat"],
+    });
+  });
+
+  it("dims an unset author", () => {
+    const bare: Adventure = {
       meta: { id: "a", title: "A", version: "1" },
       premise: "p",
       start: {},
     };
-    expect(renderConfigFields(adventure).find((r) => r.label === "Author")?.dim).toBe(
-      true,
-    );
+    const author = renderConfigFields(bare).find(
+      (r) => r.kind === "scalar" && r.label === "Author",
+    )!;
+    expect(author).toMatchObject({ dim: true });
   });
 });
 

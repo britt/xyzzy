@@ -109,6 +109,73 @@ function useTerminalSize(): { columns?: number; rows?: number } {
   return size;
 }
 
+function rowKey(row: FieldRow): string {
+  return row.kind === "heading" ? row.title : row.label;
+}
+
+/**
+ * One content-pane row. Colour carries meaning rather than decoration: cyan
+ * for the entity you're on, blue for field labels, dim italic for anything
+ * that isn't set yet, so unset placeholders never read as real data.
+ */
+function FieldRowView({ row }: { row: FieldRow }) {
+  if (row.kind === "heading") {
+    return (
+      <Box flexDirection="column" marginBottom={1}>
+        <Text bold color="cyan">
+          {row.title}
+        </Text>
+        <Text dimColor>{row.subtitle}</Text>
+      </Box>
+    );
+  }
+
+  if (row.kind === "scalar") {
+    return (
+      <Box marginBottom={1}>
+        <Text bold color="blue">
+          {row.label}{" "}
+        </Text>
+        <Text dimColor={row.dim} italic={row.dim}>
+          {row.value}
+        </Text>
+      </Box>
+    );
+  }
+
+  if (row.kind === "block") {
+    return (
+      <Box flexDirection="column" marginBottom={1}>
+        <Text bold color="blue">
+          {row.label}
+        </Text>
+        <Box paddingLeft={2}>
+          <Text dimColor={row.dim} italic={row.dim}>
+            {row.value}
+          </Text>
+        </Box>
+      </Box>
+    );
+  }
+
+  return (
+    <Box flexDirection="column" marginBottom={1}>
+      <Text bold color="blue">
+        {row.label}
+      </Text>
+      <Box flexDirection="column" paddingLeft={2}>
+        {row.items.length === 0 ? (
+          <Text dimColor italic>
+            (none)
+          </Text>
+        ) : (
+          row.items.map((item) => <Text key={item}>· {item}</Text>)
+        )}
+      </Box>
+    </Box>
+  );
+}
+
 /** Seed a fresh game, stamping the timestamp at call time. */
 function newGameStateFor(adventure: Adventure): GameState {
   return newGameState(adventure, new Date().toISOString());
@@ -376,12 +443,20 @@ export function DevApp({
             </Text>
           ))}
           <Text> </Text>
-          {entries.map((e, i) => (
-            <Text key={`${e.kind}:${e.id}`} inverse={i === index}>
-              {"  " + e.label}
-              {issues[entityKey(e.kind, e.id)] ? "  ⚠" : ""}
-            </Text>
-          ))}
+          {entries.map((e, i) => {
+            const broken = Boolean(issues[entityKey(e.kind, e.id)]);
+            return (
+              <Text
+                key={`${e.kind}:${e.id}`}
+                bold={i === index}
+                color={broken ? "red" : i === index ? "cyan" : undefined}
+              >
+                {i === index ? "› " : "  "}
+                {e.label}
+                {broken ? " ⚠" : ""}
+              </Text>
+            );
+          })}
         </Box>
         <Box flexDirection="column" flexGrow={1} overflow="hidden">
           {submenuOpen ? (
@@ -420,10 +495,8 @@ export function DevApp({
               <Text color="red">{formatIssues(currentIssues)}</Text>
             </>
           ) : (
-            fieldRows.map((row) => (
-              <Text key={row.label} dimColor={row.dim}>
-                {row.label}: {row.value}
-              </Text>
+            fieldRows.map((row, i) => (
+              <FieldRowView key={`${row.kind}:${rowKey(row)}:${i}`} row={row} />
             ))
           )}
         </Box>
