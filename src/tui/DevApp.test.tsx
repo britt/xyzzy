@@ -16,6 +16,8 @@ import type { ProviderConfig } from "../config/schema.js";
 const UP = "\x1b[A";
 const DOWN = "\x1b[B";
 const ESC = "\x1b";
+const PGUP = "\x1b[5~";
+const PGDN = "\x1b[6~";
 
 const adventure: Adventure = {
   meta: { id: "a", title: "Cave of Echoes", version: "1", author: "Britt" },
@@ -906,24 +908,26 @@ describe("DevApp content pane scrolling", () => {
     const { stdout, stdin, app } = renderSized(74, 14, { adventure: crowded });
     await toCharacters(stdin);
 
-    const atTop = frameText(stdout);
-    expect(atTop).toContain("Grimble");
-    expect(atTop).not.toContain("Interactions"); // below the fold
+    // The lowercase id is the heading's subtitle, unique to the content pane.
+    await expect.poll(() => frameText(stdout)).toContain("grimble");
+    expect(frameText(stdout)).not.toContain("haggle"); // last group, below the fold
 
-    await press(stdin, "\x1b[6~"); // PgDn
-    const scrolled = frameText(stdout);
-    expect(scrolled).toContain("Interactions");
-    expect(scrolled).not.toBe(atTop);
+    await press(stdin, PGDN);
+    await expect.poll(() => frameText(stdout)).not.toContain("grimble");
 
-    await press(stdin, "\x1b[5~"); // PgUp
-    expect(frameText(stdout)).toContain("Grimble");
+    // Everything is reachable by paging, however the pane is sized.
+    for (let i = 0; i < 5; i++) await press(stdin, PGDN);
+    await expect.poll(() => frameText(stdout)).toContain("haggle");
+
+    for (let i = 0; i < 8; i++) await press(stdin, PGUP);
+    await expect.poll(() => frameText(stdout)).toContain("grimble");
     app.unmount();
   });
 
   it("does not scroll past the end", async () => {
     const { stdout, stdin, app } = renderSized(74, 14, { adventure: crowded });
     await toCharacters(stdin);
-    for (let i = 0; i < 10; i++) await press(stdin, "\x1b[6~");
+    for (let i = 0; i < 10; i++) await press(stdin, PGDN);
     const end = frameText(stdout);
     expect(end).toContain("Interactions"); // last group still visible
     expect(frameGeometry(stdout).height).toBeLessThan(14);
@@ -943,13 +947,14 @@ describe("DevApp content pane scrolling", () => {
     };
     const { stdout, stdin, app } = renderSized(74, 14, { adventure: twoChars });
     await toCharacters(stdin);
-    await press(stdin, "\x1b[6~"); // scroll down
+    await press(stdin, PGDN); // scroll down
     // The lowercase id is the heading's subtitle, unique to the content pane
     // (the sidebar shows the capitalised name), so it proves we scrolled past it.
-    expect(frameText(stdout)).not.toContain("grimble");
+    await expect.poll(() => frameText(stdout)).not.toContain("grimble");
 
     await press(stdin, DOWN); // select the next character
-    expect(frameText(stdout)).toContain("other"); // subtitle visible: back at the top
+    // Subtitle visible again: the pane scrolled back to the top.
+    await expect.poll(() => frameText(stdout)).toContain("other");
     app.unmount();
   });
 
@@ -963,5 +968,36 @@ describe("DevApp content pane scrolling", () => {
     await toCharacters(short.stdin);
     expect(frameText(short.stdout)).toContain("Scroll");
     short.app.unmount();
+  });
+});
+
+describe("DevApp footer divider", () => {
+  it("draws a full-width rule immediately above the hot keys", () => {
+    const { stdout, app } = renderSized(74, 14);
+    const lines = frameText(stdout).split("\n");
+    const footer = lines.findIndex((l) => l.includes("Quit"));
+
+    expect(footer).toBeGreaterThan(0);
+    expect(lines[footer - 1]).toMatch(/^─+$/);
+    expect(lines[footer - 1]).toHaveLength(74);
+    app.unmount();
+  });
+
+  it("keeps the whole screen within the terminal once the divider is added", () => {
+    const { stdout, app } = renderSized(74, 14);
+    expect(frameGeometry(stdout).height).toBe(13);
+    expect(frameGeometry(stdout).maxWidth).toBeLessThanOrEqual(74);
+    app.unmount();
+  });
+
+  it("still fits the divider when a crowded entity scrolls", async () => {
+    const { stdout, stdin, app } = renderSized(74, 14, { adventure: crowded });
+    await toCharacters(stdin);
+    await press(stdin, PGDN);
+    const lines = frameText(stdout).split("\n");
+    const footer = lines.findIndex((l) => l.includes("Quit"));
+    expect(lines[footer - 1]).toMatch(/^─+$/);
+    expect(frameGeometry(stdout).height).toBe(13);
+    app.unmount();
   });
 });

@@ -518,7 +518,18 @@ export function DevApp({
         </Box>
       </Box>
 
-      <Box flexShrink={0}>
+      {/* Rule separating the key list from the panes. A top border tracks the
+          box width on its own, so it stays full-width across resizes. */}
+      <Box
+        flexShrink={0}
+        borderStyle="single"
+        borderTop
+        borderBottom={false}
+        borderLeft={false}
+        borderRight={false}
+        borderTopColor="cyan"
+        borderTopDimColor
+      >
         {hotKeys.map((hotKey, i) => (
           <Text key={hotKey.key}>
             {i > 0 ? "   " : ""}

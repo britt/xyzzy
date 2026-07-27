@@ -55,8 +55,8 @@ export function devLayout(
 
 /** Rows the play pane spends on its status bar and input line. */
 export const PLAY_CHROME_ROWS = 3;
-/** Rows the hot-key footer occupies at the bottom of the screen. */
-export const FOOTER_ROWS = 1;
+/** Rows the hot-key footer occupies: its divider rule plus the key list. */
+export const FOOTER_ROWS = 2;
 
 /** Columns available inside the content pane, or undefined if width is unknown. */
 export function contentPaneWidth(layout: DevLayout): number | undefined {
