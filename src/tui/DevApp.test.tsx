@@ -523,6 +523,35 @@ describe("DevApp play-focus mode", () => {
     unmount();
   });
 
+  it("still responds to input after the embedded session is quit with /quit", async () => {
+    const dir = tmpAdventure();
+    const { lastFrame, stdin, unmount } = mountForPlay(dir);
+    await press(stdin, "p");
+    await press(stdin, "\r");
+    await press(stdin, "/quit");
+    await press(stdin, "\r");
+
+    // The sidebar owns the keyboard again.
+    await press(stdin, "\t");
+    expect(lastFrame()).toContain("won-the-key");
+    unmount();
+  });
+
+  it("can still be quit with q after the embedded session is quit", async () => {
+    const dir = tmpAdventure();
+    const { lastFrame, stdin, unmount } = mountForPlay(dir);
+    await press(stdin, "p");
+    await press(stdin, "\r");
+    await press(stdin, "/quit");
+    await press(stdin, "\r");
+
+    await press(stdin, "q");
+    const frameAtQuit = lastFrame();
+    await press(stdin, "\t"); // no effect — the app exited
+    expect(lastFrame()).toBe(frameAtQuit);
+    unmount();
+  });
+
   it("q quits the whole tool when the sidebar has focus", async () => {
     const dir = tmpAdventure();
     const { lastFrame, stdin, unmount } = mountForPlay(dir);
