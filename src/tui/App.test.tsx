@@ -50,6 +50,12 @@ function mount(
   providers: Record<string, ProviderConfig> = {},
   makeDetector?: (config: ProviderConfig) => Detector,
   adventureDir: string = mkdtempSync(join(tmpdir(), "xyzzy-tui-")),
+  extra: {
+    onQuit?: () => void;
+    inputActive?: boolean;
+    scrollbackMode?: "native" | "bounded";
+    scrollbackViewport?: { rows: number; width: number };
+  } = {},
 ) {
   return render(
     <App
@@ -62,6 +68,10 @@ function mount(
       providers={providers}
       adventureDir={adventureDir}
       saveSlot="autosave"
+      onQuit={extra.onQuit}
+      inputActive={extra.inputActive}
+      scrollbackMode={extra.scrollbackMode}
+      scrollbackViewport={extra.scrollbackViewport}
     />,
   );
 }
@@ -605,6 +615,179 @@ describe("timing display", () => {
     await type(stdin, "push rock");
     await expect.poll(() => lastFrame()).toContain("boom");
     expect(lastFrame()).toMatch(/Turn \d/); // timing line persists through the failed turn
+    unmount();
+  });
+});
+
+describe("embeddability", () => {
+  it("/quit calls the onQuit override instead of exiting the Ink root, when provided", async () => {
+    let quitCalls = 0;
+    const { stdin, unmount } = mount(
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      { onQuit: () => quitCalls++ },
+    );
+
+    await type(stdin, "/quit");
+
+    expect(quitCalls).toBe(1);
+    unmount();
+  });
+
+  it("/quit exits the Ink app when no onQuit override is provided (default behavior)", async () => {
+    const { lastFrame, stdin, unmount } = mount();
+
+    await type(stdin, "/quit");
+    const frameAtQuit = lastFrame();
+
+    // The app has exited; further input has no visible effect.
+    await type(stdin, "/help");
+    expect(lastFrame()).toBe(frameAtQuit);
+    unmount();
+  });
+
+  it("does not react to input when inputActive is false", async () => {
+    const { lastFrame, stdin, unmount } = mount(
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      { inputActive: false },
+    );
+    const before = lastFrame();
+
+    await type(stdin, "/help");
+
+    // No new output — the input line is inactive, so nothing was submitted.
+    expect(lastFrame()).toBe(before);
+    unmount();
+  });
+
+  it("reacts to input again once inputActive becomes true", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "xyzzy-tui-"));
+    const { lastFrame, stdin, rerender, unmount } = mount(
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      dir,
+      { inputActive: false },
+    );
+
+    rerender(
+      <App
+        adventure={adventure}
+        initialState={newGameState(adventure, "now")}
+        provider={provider}
+        makeModel={() => new FakeNarratorModel()}
+        listModels={async () => []}
+        providers={{}}
+        adventureDir={dir}
+        saveSlot="autosave"
+        inputActive={true}
+      />,
+    );
+
+    await type(stdin, "/help");
+
+    await expect.poll(() => lastFrame()).toContain("/quit");
+    unmount();
+  });
+});
+
+describe("scrollback modes", () => {
+  /** A model that narrates a distinct, greppable line per turn. */
+  function countingModel(): NarratorModel {
+    let n = 0;
+    return {
+      async generate() {
+        n += 1;
+        return { narration: `NARRATION-${n}`, actions: [] };
+      },
+    };
+  }
+
+  async function runTurns(
+    stdin: { write: (s: string) => void },
+    count: number,
+  ): Promise<void> {
+    for (let i = 1; i <= count; i++) await type(stdin, `look${i}`);
+  }
+
+  it("native mode keeps the whole transcript in the output, so terminal scrollback owns history", async () => {
+    const model = countingModel();
+    const { lastFrame, stdin, unmount } = mount(model, () => model);
+
+    await runTurns(stdin, 3);
+    await expect.poll(() => lastFrame()).toContain("NARRATION-3");
+
+    // The seeded opening line and the earliest narration are both still there.
+    expect(lastFrame()).toContain("A cold stone chamber.");
+    expect(lastFrame()).toContain("NARRATION-1");
+    unmount();
+  });
+
+  it("bounded mode drops the oldest entries that no longer fit the panel", async () => {
+    const model = countingModel();
+    const { lastFrame, stdin, unmount } = mount(
+      model,
+      () => model,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      { scrollbackMode: "bounded", scrollbackViewport: { rows: 6, width: 60 } },
+    );
+
+    await runTurns(stdin, 3);
+    await expect.poll(() => lastFrame()).toContain("NARRATION-3");
+
+    // Only the newest few entries fit; the opening line has scrolled out.
+    expect(lastFrame()).not.toContain("A cold stone chamber.");
+    expect(lastFrame()).not.toContain("NARRATION-1");
+    unmount();
+  });
+
+  it("bounded mode still shows the status bar and input line below the panel", async () => {
+    const model = countingModel();
+    const { lastFrame, stdin, unmount } = mount(
+      model,
+      () => model,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      { scrollbackMode: "bounded", scrollbackViewport: { rows: 6, width: 60 } },
+    );
+
+    await runTurns(stdin, 3);
+    await expect.poll(() => lastFrame()).toContain("NARRATION-3");
+    expect(lastFrame()).toContain("Cave · Start · turn 3");
+    unmount();
+  });
+
+  it("bounded mode with no viewport falls back to showing everything", async () => {
+    const model = countingModel();
+    const { lastFrame, stdin, unmount } = mount(
+      model,
+      () => model,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      { scrollbackMode: "bounded" },
+    );
+
+    await runTurns(stdin, 2);
+    await expect.poll(() => lastFrame()).toContain("NARRATION-2");
+    expect(lastFrame()).toContain("A cold stone chamber.");
     unmount();
   });
 });

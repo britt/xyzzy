@@ -2,7 +2,12 @@ import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { AdventureLoadError, loadAdventure, readAdventureFile } from "./loader.js";
+import {
+  AdventureLoadError,
+  loadAdventure,
+  readAdventureFile,
+  readAdventureFileWithSources,
+} from "./loader.js";
 
 const EXAMPLE = "examples/cave-of-echoes";
 
@@ -160,5 +165,59 @@ describe("readAdventureFile", () => {
     writeAdventure(dir);
     const raw = readAdventureFile(dir) as { entities?: unknown };
     expect(raw.entities).toBeUndefined();
+  });
+});
+
+describe("readAdventureFileWithSources", () => {
+  it("maps every entity to the file it was actually defined in, for the real example adventure", () => {
+    const { sources } = readAdventureFileWithSources(EXAMPLE);
+
+    // rooms/cave.yaml holds two rooms; neither filename matches an id.
+    expect(sources.get("room:entrance")).toBe(join(EXAMPLE, "rooms", "cave.yaml"));
+    expect(sources.get("room:cavern")).toBe(join(EXAMPLE, "rooms", "cave.yaml"));
+    // ...while these files happen to be named after their single entity.
+    expect(sources.get("room:lake")).toBe(join(EXAMPLE, "rooms", "lake.yaml"));
+    expect(sources.get("character:grimble")).toBe(
+      join(EXAMPLE, "characters", "grimble.yaml"),
+    );
+    // items/items.yaml holds four items under one unrelated filename.
+    expect(sources.get("item:lantern")).toBe(join(EXAMPLE, "items", "items.yaml"));
+    expect(sources.get("item:copper-coin")).toBe(join(EXAMPLE, "items", "items.yaml"));
+    // beats/grimble-and-treasure.yaml holds two beats.
+    expect(sources.get("beat:win-over-grimble")).toBe(
+      join(EXAMPLE, "beats", "grimble-and-treasure.yaml"),
+    );
+  });
+
+  it("attributes inline entities to adventure.yaml itself", () => {
+    const dir = tmp();
+    writeAdventure(
+      dir,
+      `
+meta:
+  id: a
+  title: A
+  version: "1"
+premise: p
+start: {}
+entities:
+  rooms:
+    - id: inline-room
+      name: Inline
+      description: d
+beats:
+  - id: inline-beat
+    description: d
+`,
+    );
+    const { sources } = readAdventureFileWithSources(dir);
+    expect(sources.get("room:inline-room")).toBe(join(dir, "adventure.yaml"));
+    expect(sources.get("beat:inline-beat")).toBe(join(dir, "adventure.yaml"));
+  });
+
+  it("returns the same raw value readAdventureFile does", () => {
+    expect(readAdventureFileWithSources(EXAMPLE).raw).toEqual(
+      readAdventureFile(EXAMPLE),
+    );
   });
 });

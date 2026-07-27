@@ -181,6 +181,54 @@ These scenarios assume **no local LLM server is available**. They cover every CL
 
 **If Blocked**: If no real TTY is available (e.g. a non-interactive sandboxed tool), stop and ask the developer to run this scenario, or note the limitation explicitly in the verification log. Do not substitute `ink-testing-library` and report it as this scenario passing — that's a unit test, not verification.
 
+### Scenario 9: Multi-pane development TUI (`xyzzy dev`)
+
+**Context**: `xyzzy dev` requires a real TTY, same as `play`'s Scenario 5. This scenario exercises browsing, editing via `$EDITOR`, validation-failure recovery, and embedded play-testing in one continuous session.
+
+Note the example adventure deliberately does *not* use one-entity-per-file
+naming — `rooms/cave.yaml` holds two rooms and `items/items.yaml` holds four —
+so this scenario also covers resolving an entity to the file it is really
+defined in. Set a **blocking** editor before starting; a GUI editor without its
+wait flag returns immediately and the reload fires before you have edited
+anything (`export EDITOR="code --wait"`).
+
+**Steps**:
+1. Copy `examples/cave-of-echoes` to `/tmp/xyzzy-verify-dev`.
+2. In a real terminal: `bun run start -- dev /tmp/xyzzy-verify-dev`
+3. Confirm the Adventure Config category is selected by default and its fields (title, id, version, premise) are shown.
+4. Press `Tab` three times to reach the Rooms category; confirm the room list appears and the first room's fields (name, description, exits) show in the content pane.
+5. Press `e`; in `$EDITOR`, change the selected room's description, save, and quit the editor.
+6. Confirm the content pane now shows the updated description.
+7. Press `e` again; in `$EDITOR`, change an exit to point at a room id that doesn't exist (e.g. `nowhere`), save, and quit.
+8. Confirm an inline validation-error banner appears in the content pane and a `⚠` appears next to that room in the sidebar; press `Tab`/`↑`/`↓` to confirm every other entity is still browsable normally.
+9. Press `e` one more time and fix the exit back to a real room id; confirm the banner and `⚠` both clear.
+10. Press `e` once more and save deliberately malformed YAML (e.g. `name: [unclosed`); confirm an `Invalid YAML` banner appears and the tool keeps running rather than exiting. Fix it back with another `e`.
+11. Press `p`; confirm a submenu with "New Game" appears (plus any save slots).
+12. Press Enter to start a new game; confirm the familiar `play` narration/status bar appears in the content pane, with the sidebar still visible alongside it.
+13. Type a command and press Enter; confirm a turn runs (or, with no local LLM reachable, that the same "no language model is available" message `play` shows appears here too — not a crash).
+14. Press `Escape`; confirm focus returns to the sidebar (`Tab` switches categories again) while the play pane remains visible with its scrollback intact.
+15. Press `p` again; confirm the same session re-focuses (scrollback still there, not restarted).
+16. Type `/quit` and press Enter inside the play pane; confirm the content pane returns to showing the sidebar's currently selected entity, and the tool itself is still running.
+17. Press `q`; confirm the tool exits cleanly back to the shell.
+18. Delete `/tmp/xyzzy-verify-dev`.
+
+**Success Criteria**:
+- [ ] Step 3 shows Adventure Config fields by default
+- [ ] Step 4 shows the Rooms entity list and a room's rendered fields (not raw YAML)
+- [ ] Step 5 opens the room's *real* source file (`rooms/cave.yaml` for the
+      first room, not a nonexistent `rooms/entrance.yaml`), and step 6 shows the
+      edited description without restarting the tool
+- [ ] Step 8 shows both the inline banner and the sidebar `⚠`, and every other entity stays normally browsable
+- [ ] Step 9 clears both the banner and the glyph
+- [ ] Step 10 reports malformed YAML inline without the tool exiting, and recovers when the file is fixed
+- [ ] Steps 11-13 launch and drive an embedded play session without leaving the tool
+- [ ] Step 14 returns keyboard focus to the sidebar without ending the play session
+- [ ] Step 15 re-focuses the same session (no restart, scrollback intact)
+- [ ] Step 16 exits play-focus without exiting the whole tool
+- [ ] Step 17 exits the whole tool cleanly
+
+**If Blocked**: If no real TTY is available, stop and ask the developer to run this scenario, or note the limitation explicitly in the verification log — same as Scenarios 5 and 8. Do not substitute `ink-testing-library` and report it as this scenario passing; `DevApp.test.tsx` already covers that ground as a unit test, not verification.
+
 ## Verification Rules
 
 - Never use mocks or fakes

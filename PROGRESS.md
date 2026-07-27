@@ -298,3 +298,89 @@
 - Notes: a PR (#20) was opened for this branch from the Claude Code UI
   before this task started; no new PR was created, these commits update
   it directly.
+
+## `xyzzy dev` Multi-Pane Development TUI (Tasks 1-10) - COMPLETE
+
+- Started: 2026-07-27
+- Plan: `docs/plans/2026-07-27-dev-tool-tui-plan.md` (design:
+  `docs/plans/2026-07-27-dev-tool-tui-design.md`)
+- Tests: 339 passing, 0 failing (up from 287 at branch start; +52).
+  Every task went RED first and was confirmed to fail for the intended
+  reason before any production code was written.
+  - Task 1 `entityCatalog.ts` — 8 tests (category order, labels, per-category
+    entry listing, empty adventure)
+  - Task 2 `renderFields.ts` — 12 tests (all four entity kinds + config,
+    set/unset scalars, dispatch)
+  - Task 3 `App.tsx` embeddability — 4 tests (`onQuit` override, default
+    exit, inactive input, reactivation)
+  - Tasks 4-7 `DevApp.tsx` — 28 tests (sidebar navigation, editing/reload/
+    validation, play-focus mode, whole-tool quit)
+- Coverage (new/changed files): `entityCatalog.ts` 100/86.66/100/100,
+  `renderFields.ts` 100/100/100/100, `DevApp.tsx` 100/97.97/100/100.
+  `App.tsx` branch coverage improved 77.67% -> 79.48% (the remaining
+  shortfall against the 85% bar is pre-existing in untouched paths;
+  measured against commit 32c5e7f to confirm). `dev.ts` is 0% by the same
+  convention as `play.ts` (also 0%) — thin Ink/TTY orchestration glue with
+  no test file, verified manually instead.
+- Build: Successful (`bun run build`)
+- Linting: Clean (`bun run lint`), typecheck clean (`bun run typecheck`)
+- Completed: 2026-07-27
+- Notes: Five defects in the plan were found and corrected during
+  execution, four of them caught by the RED step:
+  1. Plan's DevApp tests wrote to stdin immediately after mount, so Ink's
+     `useInput` had not yet subscribed and the first keystroke of every
+     test was dropped (7/10 Task 4 tests failed). Fixed with a `press()`
+     helper carrying the same leading tick `App.test.tsx`'s `type()` uses.
+  2. Escape and arrow-key literals had lost their `\x1b` prefix in the
+     plan text (`stdin.write("")`, `stdin.write("[B")`).
+  3. Task 6 asserted the seeded narration was the premise (`"A dark
+     cave."`); `App.tsx` seeds from the start room's description, so the
+     correct expectation is `"A dark cavern."`.
+  4. `editSelected` called `readAdventureFile` unguarded inside a key
+     handler; a YAML syntax error saved from `$EDITOR` would have thrown
+     and torn down the whole TUI. Now caught and surfaced through the same
+     inline banner, with a regression test.
+  5. `Escape` left the play submenu open while moving focus away. It now
+     closes the submenu too.
+- Outstanding: `VERIFICATION_PLAN.md` Scenario 9 requires a real TTY and
+  has NOT been run — it needs to be driven manually by the developer.
+
+## `xyzzy dev` — Post-verification bug fixes - COMPLETE
+
+- Started: 2026-07-27 (after developer ran VERIFICATION_PLAN Scenario 9)
+- Reported symptom: pressing `e` did not open the selected file in the editor.
+- Root cause (found via systematic-debugging, not the initially guessed
+  relative-vs-absolute path — the path was absolute): `entityFilePath` builds
+  `<kind>s/<id>.yaml`, which is the *creation* convention `xyzzy new` writes
+  to, not a lookup of where an entity is actually defined. Adventures may
+  define entities inline in `adventure.yaml`, or put several in one file under
+  an unrelated name — `examples/cave-of-echoes` does both (`rooms/cave.yaml`
+  holds `entrance` + `cavern`; `items/items.yaml` holds four items). Measured:
+  8 of that example's 12 entities resolved to files that do not exist,
+  including the first room, so the editor opened an empty buffer.
+- Why the unit tests missed it: the `tmpAdventure()` fixture wrote one entity
+  per file with filename == id, encoding the same wrong assumption as the
+  code. Fixtures now mirror the real multi-entity layout, and new loader tests
+  assert provenance against `examples/cave-of-echoes` itself.
+- Fix 1 (`loader.ts`, `DevApp.tsx`): the loader already tracked
+  `SourcedValue.file` for duplicate-id errors and discarded it; surfaced as
+  `EntitySourceMap` via `readAdventureFileWithSources`, and edit targets now
+  resolve through it. Verified all 12 example entities resolve to existing
+  files (was 4).
+- Fix 2 (`util/editor.ts`, new): `defaultOpenEditor` had four defects —
+  inverted VISUAL/EDITOR precedence, `??` treating `EDITOR=""` as set, no
+  argument parsing (so `EDITOR="code --wait"` spawned a binary literally named
+  `code --wait`), and a discarded `spawnSync` result making a failed launch
+  silent. GUI editors return immediately without their wait flag, so the
+  reload fired before any edit. Launch failures now report in the inline
+  banner rather than throwing out of the key handler and killing the TUI.
+- Tests: 356 passing, 0 failing (up from 344). Both fixes went RED first, each
+  reproducing the real-world layout/condition before any production change.
+- Build: Successful. Linting: clean. Typecheck: clean.
+- Completed: 2026-07-27
+- Developer confirmed the fix against Scenario 9 in a real terminal.
+- Known limitation (not fixed): Ink holds stdin in raw mode with its own
+  `readable` listener, and the editor spawn does not release it, so terminal
+  editors (vim/nano, and the `vi` fallback) may misbehave. GUI editors are
+  unaffected. Deferred rather than shipped unverified — it needs a TTY to
+  validate and involves Ink's `setRawMode` refcounting.
