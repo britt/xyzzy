@@ -374,6 +374,27 @@ describe("DevApp editing", () => {
     unmount();
   });
 
+  it("reports an editor that fails to launch instead of crashing the tool", async () => {
+    const dir = tmpAdventure();
+    const { lastFrame, stdin, unmount } = render(
+      <DevApp
+        adventure={adventure}
+        adventureDir={dir}
+        openEditor={() => {
+          throw new Error('Could not launch editor "nope-not-here"');
+        }}
+      />,
+    );
+    await toRooms(stdin);
+    await press(stdin, "e");
+
+    expect(lastFrame()).toContain("Could not launch editor");
+    // Still alive: navigation keeps working.
+    await press(stdin, DOWN);
+    expect(lastFrame()).toContain("A long hall.");
+    unmount();
+  });
+
   it("leaves the file untouched when no entity is selected in an empty category", async () => {
     const dir = tmpAdventure();
     const opened: string[] = [];

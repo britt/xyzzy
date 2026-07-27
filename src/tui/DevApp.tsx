@@ -183,7 +183,16 @@ export function DevApp({
           : undefined;
     if (!path || !currentKey) return;
 
-    openEditor?.(path);
+    // A missing or unlaunchable $EDITOR is reported like any other problem —
+    // silently doing nothing is indistinguishable from a dead keybinding.
+    // Nothing was edited, so there is nothing to reload.
+    try {
+      openEditor?.(path);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      setIssues((prev) => ({ ...prev, [currentKey]: [{ path: "(editor)", message }] }));
+      return;
+    }
 
     // A syntax error in what the editor saved makes the reload throw; that
     // must surface in the banner like any other problem, not tear down the

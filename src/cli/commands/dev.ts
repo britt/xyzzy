@@ -1,5 +1,4 @@
 import { dirname } from "node:path";
-import { spawnSync } from "node:child_process";
 import { createElement } from "react";
 import { render } from "ink";
 import { DevApp } from "../../tui/DevApp.js";
@@ -8,19 +7,10 @@ import { resolveProvider } from "../../config/resolve.js";
 import { readGlobalConfig } from "../../config/store.js";
 import { createDetector, createModel, listModels } from "../../llm/registry.js";
 import { log } from "../../util/log.js";
+import { openInEditor } from "../../util/editor.js";
 
 export interface DevOptions {
   provider?: string;
-}
-
-/**
- * Run $EDITOR (or $VISUAL, or vi) on `path` against the real TTY, returning
- * once it exits. `stdio: "inherit"` hands the terminal to the editor for the
- * duration; Ink repaints on the next render.
- */
-function defaultOpenEditor(path: string): void {
-  const editor = process.env.EDITOR ?? process.env.VISUAL ?? "vi";
-  spawnSync(editor, [path], { stdio: "inherit" });
 }
 
 /**
@@ -48,7 +38,7 @@ export async function dev(path: string, opts: DevOptions): Promise<void> {
     createElement(DevApp, {
       adventure,
       adventureDir,
-      openEditor: defaultOpenEditor,
+      openEditor: (file: string) => openInEditor(file),
       provider,
       // Built lazily inside the TUI so an unreachable LLM never blocks
       // startup — browsing and editing don't need a model at all.
