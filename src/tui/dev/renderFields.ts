@@ -9,8 +9,12 @@ import type { Category } from "./entityCatalog.js";
  * and structural data as a bulleted list instead of a crammed comma-join.
  */
 export type FieldRow =
-  /** Anchors the pane: what you're looking at, and what identifies it. */
-  | { kind: "heading"; title: string; subtitle: string }
+  /**
+   * Anchors the pane: what you're looking at, over its id. The entity's kind
+   * is deliberately absent — the sidebar's selected category already says it.
+   * Omitted entirely for a beat, whose title *is* its id.
+   */
+  | { kind: "heading"; title: string; subtitle?: string }
   /** A short value that reads well beside its label. */
   | { kind: "scalar"; label: string; value: string; dim: boolean }
   /** Prose (description, persona, premise) shown under its label. */
@@ -36,8 +40,10 @@ function block(label: string, value: string | undefined, placeholder: string): F
     : { kind: "block", label, value: placeholder, dim: true };
 }
 
-function heading(title: string, subtitle: string): FieldRow {
-  return { kind: "heading", title, subtitle };
+function heading(title: string, subtitle?: string): FieldRow {
+  return subtitle === undefined
+    ? { kind: "heading", title }
+    : { kind: "heading", title, subtitle };
 }
 
 function plural(count: number, singular: string): string {
@@ -60,7 +66,7 @@ function describeEffect(effect: { type: string }): string {
 
 export function renderRoomFields(room: Room): FieldRow[] {
   return [
-    heading(room.name, `room · ${room.id}`),
+    heading(room.name, room.id),
     block("Description", room.description, ""),
     {
       kind: "list",
@@ -74,7 +80,7 @@ export function renderRoomFields(room: Room): FieldRow[] {
 
 export function renderItemFields(item: Item): FieldRow[] {
   return [
-    heading(item.name, `item · ${item.id}`),
+    heading(item.name, item.id),
     block("Description", item.description, ""),
     scalar("Location", item.location, placeholderFor("item", "location")),
   ];
@@ -82,7 +88,7 @@ export function renderItemFields(item: Item): FieldRow[] {
 
 export function renderCharacterFields(character: Character): FieldRow[] {
   return [
-    heading(character.name, `character · ${character.id}`),
+    heading(character.name, character.id),
     block("Persona", character.persona, ""),
     scalar("Location", character.location, placeholderFor("character", "location")),
     { kind: "list", label: "History", items: [...character.history] },
@@ -106,7 +112,7 @@ export function renderCharacterFields(character: Character): FieldRow[] {
 
 export function renderBeatFields(beat: StoryBeat): FieldRow[] {
   return [
-    heading(beat.id, "beat"),
+    heading(beat.id),
     block("Description", beat.description, ""),
     block("Trigger", beat.trigger, placeholderFor("beat", "trigger")),
     {
@@ -120,7 +126,7 @@ export function renderBeatFields(beat: StoryBeat): FieldRow[] {
 export function renderConfigFields(adventure: Adventure): FieldRow[] {
   const entities = adventure.entities;
   return [
-    heading(adventure.meta.title, `adventure · ${adventure.meta.id}`),
+    heading(adventure.meta.title, adventure.meta.id),
     { kind: "scalar", label: "Version", value: adventure.meta.version, dim: false },
     scalar("Author", adventure.meta.author, "<author name>"),
     block("Premise", adventure.premise, ""),

@@ -18,7 +18,7 @@ describe("renderRoomFields", () => {
       exits: { north: "hall" },
     };
     expect(renderRoomFields(room)).toEqual([
-      { kind: "heading", title: "Cavern", subtitle: "room · cavern" },
+      { kind: "heading", title: "Cavern", subtitle: "cavern" },
       { kind: "block", label: "Description", value: "A dark cavern.", dim: false },
       { kind: "list", label: "Exits", items: ["north → hall"] },
     ]);
@@ -53,7 +53,7 @@ describe("renderItemFields", () => {
   it("renders description as a block and location as a scalar", () => {
     const item: Item = { id: "key", name: "Key", description: "d", location: "cavern" };
     expect(renderItemFields(item)).toEqual([
-      { kind: "heading", title: "Key", subtitle: "item · key" },
+      { kind: "heading", title: "Key", subtitle: "key" },
       { kind: "block", label: "Description", value: "d", dim: false },
       { kind: "scalar", label: "Location", value: "cavern", dim: false },
     ]);
@@ -83,7 +83,7 @@ describe("renderCharacterFields", () => {
     expect(rows[0]).toEqual({
       kind: "heading",
       title: "Hermit",
-      subtitle: "character · hermit",
+      subtitle: "hermit",
     });
     expect(rows).toContainEqual({
       kind: "block",
@@ -142,7 +142,7 @@ describe("renderBeatFields", () => {
   it("uses the beat's id as its heading, since beats have no name", () => {
     const beat: StoryBeat = { id: "won-the-key", description: "d", trigger: "t" };
     expect(renderBeatFields(beat)).toEqual([
-      { kind: "heading", title: "won-the-key", subtitle: "beat" },
+      { kind: "heading", title: "won-the-key" },
       { kind: "block", label: "Description", value: "d", dim: false },
       { kind: "block", label: "Trigger", value: "t", dim: false },
       { kind: "list", label: "Effects", items: [] },
@@ -193,7 +193,7 @@ describe("renderConfigFields", () => {
     expect(renderConfigFields(adventure)[0]).toEqual({
       kind: "heading",
       title: "A Title",
-      subtitle: "adventure · a",
+      subtitle: "a",
     });
   });
 

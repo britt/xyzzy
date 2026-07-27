@@ -125,7 +125,7 @@ function FieldRowView({ row }: { row: FieldRow }) {
         <Text bold color="cyan">
           {row.title}
         </Text>
-        <Text dimColor>{row.subtitle}</Text>
+        {row.subtitle !== undefined && <Text dimColor>{row.subtitle}</Text>}
       </Box>
     );
   }
