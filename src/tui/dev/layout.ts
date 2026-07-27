@@ -58,6 +58,18 @@ export const PLAY_CHROME_ROWS = 3;
 /** Rows the hot-key footer occupies at the bottom of the screen. */
 export const FOOTER_ROWS = 1;
 
+/** Columns available inside the content pane, or undefined if width is unknown. */
+export function contentPaneWidth(layout: DevLayout): number | undefined {
+  if (layout.width === undefined) return undefined;
+  return Math.max(1, layout.width - layout.sidebarWidth - SIDEBAR_GAP);
+}
+
+/** Rows available inside the content pane, or undefined if height is unknown. */
+export function contentPaneHeight(layout: DevLayout): number | undefined {
+  if (layout.height === undefined) return undefined;
+  return Math.max(1, layout.height - FOOTER_ROWS);
+}
+
 /**
  * Viewport for an embedded play session's bounded scrollback: the content
  * pane's interior, less the rows its own status bar and input line occupy.
@@ -67,8 +79,8 @@ export const FOOTER_ROWS = 1;
 export function playViewport(
   layout: DevLayout,
 ): { rows: number; width: number } | undefined {
-  if (layout.height === undefined || layout.width === undefined) return undefined;
-  const width = Math.max(1, layout.width - layout.sidebarWidth - SIDEBAR_GAP);
-  const rows = Math.max(1, layout.height - PLAY_CHROME_ROWS - FOOTER_ROWS);
-  return { rows, width };
+  const width = contentPaneWidth(layout);
+  const height = contentPaneHeight(layout);
+  if (width === undefined || height === undefined) return undefined;
+  return { rows: Math.max(1, height - PLAY_CHROME_ROWS), width };
 }

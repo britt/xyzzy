@@ -38,8 +38,19 @@ import {
   renderFieldsFor,
   type FieldRow,
 } from "./dev/renderFields.js";
-import { devLayout, playViewport } from "./dev/layout.js";
+import {
+  contentPaneHeight,
+  contentPaneWidth,
+  devLayout,
+  playViewport,
+} from "./dev/layout.js";
 import { hotKeysFor } from "./dev/hotkeys.js";
+import {
+  clampScroll,
+  layoutFieldRows,
+  type DisplayLine,
+  type LineStyle,
+} from "./dev/contentLines.js";
 
 export interface DevAppProps {
   adventure: Adventure;
@@ -109,70 +120,43 @@ function useTerminalSize(): { columns?: number; rows?: number } {
   return size;
 }
 
-function rowKey(row: FieldRow): string {
-  return row.kind === "heading" ? row.title : row.label;
-}
-
 /**
- * One content-pane row. Colour carries meaning rather than decoration: cyan
- * for the entity you're on, blue for field labels, dim italic for anything
- * that isn't set yet, so unset placeholders never read as real data.
+ * Colour carries meaning rather than decoration: cyan for the entity you're
+ * on, blue for field labels, dim italic for anything not set yet, so unset
+ * placeholders never read as real data.
  */
-function FieldRowView({ row }: { row: FieldRow }) {
-  if (row.kind === "heading") {
-    return (
-      <Box flexDirection="column" marginBottom={1}>
-        <Text bold color="cyan">
-          {row.title}
-        </Text>
-        {row.subtitle !== undefined && <Text dimColor>{row.subtitle}</Text>}
-      </Box>
-    );
-  }
+const STYLES: Record<
+  LineStyle,
+  { color?: string; bold?: boolean; dim?: boolean; italic?: boolean }
+> = {
+  title: { color: "cyan", bold: true },
+  subtitle: { dim: true },
+  label: { color: "blue", bold: true },
+  value: {},
+  placeholder: { dim: true, italic: true },
+  item: {},
+};
 
-  if (row.kind === "scalar") {
-    return (
-      <Box marginBottom={1}>
-        <Text bold color="blue">
-          {row.label}{" "}
-        </Text>
-        <Text dimColor={row.dim} italic={row.dim}>
-          {row.value}
-        </Text>
-      </Box>
-    );
-  }
-
-  if (row.kind === "block") {
-    return (
-      <Box flexDirection="column" marginBottom={1}>
-        <Text bold color="blue">
-          {row.label}
-        </Text>
-        <Box paddingLeft={2}>
-          <Text dimColor={row.dim} italic={row.dim}>
-            {row.value}
-          </Text>
-        </Box>
-      </Box>
-    );
-  }
-
+function ContentLine({ line }: { line: DisplayLine }) {
+  if (line.segments.length === 0) return <Text> </Text>;
   return (
-    <Box flexDirection="column" marginBottom={1}>
-      <Text bold color="blue">
-        {row.label}
-      </Text>
-      <Box flexDirection="column" paddingLeft={2}>
-        {row.items.length === 0 ? (
-          <Text dimColor italic>
-            (none)
+    <Text>
+      {line.indent > 0 ? " ".repeat(line.indent) : ""}
+      {line.segments.map((segment, i) => {
+        const style = STYLES[segment.style];
+        return (
+          <Text
+            key={i}
+            bold={style.bold}
+            color={style.color}
+            dimColor={style.dim}
+            italic={style.italic}
+          >
+            {segment.text}
           </Text>
-        ) : (
-          row.items.map((item) => <Text key={item}>· {item}</Text>)
-        )}
-      </Box>
-    </Box>
+        );
+      })}
+    </Text>
   );
 }
 
@@ -236,6 +220,7 @@ export function DevApp({
   const [playState, setPlayState] = useState<GameState | null>(null);
   const [submenuOpen, setSubmenuOpen] = useState(false);
   const [submenuIndex, setSubmenuIndex] = useState(0);
+  const [scroll, setScroll] = useState(0);
 
   const saves = listSaves(adventureDir);
   const submenuOptions = ["New Game", ...saves];
@@ -343,6 +328,32 @@ export function DevApp({
     }
   }
 
+  const fieldRows: FieldRow[] =
+    category === "config"
+      ? renderConfigFields(adventure)
+      : (() => {
+          const entry = entries[index];
+          if (!entry) return [];
+          const entity = findEntity(adventure, entry);
+          return entity ? renderFieldsFor(category, entity) : [];
+        })();
+
+  // Flatten to exact terminal rows so the pane can never hand Ink more lines
+  // than it has room for — Ink garbles an overflowing box rather than clipping.
+  const paneWidth = contentPaneWidth(layout);
+  const paneHeight = contentPaneHeight(layout);
+  const contentLines = layoutFieldRows(fieldRows, paneWidth ?? 80);
+  const visibleHeight = paneHeight ?? contentLines.length;
+  const maxScroll = Math.max(0, contentLines.length - visibleHeight);
+  const scrollOffset = clampScroll(scroll, contentLines.length, visibleHeight);
+  const canScrollContent = maxScroll > 0;
+  /** Scroll a screenful at a time, keeping one line of context. */
+  const pageStep = Math.max(1, visibleHeight - 1);
+  const visibleLines = contentLines.slice(
+    scrollOffset,
+    scrollOffset + visibleHeight,
+  );
+
   useInput((input, key) => {
     if (key.escape) {
       setSubmenuOpen(false);
@@ -381,12 +392,24 @@ export function DevApp({
       exit();
       return;
     }
+    // Page keys scroll the content pane; ↑/↓ stay with entity selection.
+    // Clamped on the way in so a run of PgDn past the end doesn't leave PgUp
+    // pressing against a phantom offset before anything moves.
+    if (key.pageDown) {
+      setScroll((s) => Math.min(maxScroll, s + pageStep));
+      return;
+    }
+    if (key.pageUp) {
+      setScroll((s) => Math.max(0, s - pageStep));
+      return;
+    }
     if (key.tab) {
       const step = key.shift ? -1 : 1;
       const i = CATEGORIES.indexOf(category);
       setCategory(
         CATEGORIES[(i + step + CATEGORIES.length) % CATEGORIES.length]!,
       );
+      setScroll(0);
       return;
     }
     if (key.downArrow && entries.length > 0) {
@@ -394,10 +417,12 @@ export function DevApp({
         ...s,
         [category]: Math.min(entries.length - 1, index + 1),
       }));
+      setScroll(0);
       return;
     }
     if (key.upArrow && entries.length > 0) {
       setSelection((s) => ({ ...s, [category]: Math.max(0, index - 1) }));
+      setScroll(0);
       return;
     }
     if (input === "e") {
@@ -408,16 +433,6 @@ export function DevApp({
 
   const currentIssues = currentKey ? issues[currentKey] : undefined;
 
-  const fieldRows: FieldRow[] =
-    category === "config"
-      ? renderConfigFields(adventure)
-      : (() => {
-          const entry = entries[index];
-          if (!entry) return [];
-          const entity = findEntity(adventure, entry);
-          return entity ? renderFieldsFor(category, entity) : [];
-        })();
-
   const hotKeys = hotKeysFor({
     focus,
     submenuOpen,
@@ -425,6 +440,7 @@ export function DevApp({
     isConfigCategory: category === "config",
     hasLiveSession: playState !== null,
     canPlay,
+    canScrollContent,
   });
 
   return (
@@ -495,8 +511,8 @@ export function DevApp({
               <Text color="red">{formatIssues(currentIssues)}</Text>
             </>
           ) : (
-            fieldRows.map((row, i) => (
-              <FieldRowView key={`${row.kind}:${rowKey(row)}:${i}`} row={row} />
+            visibleLines.map((line, i) => (
+              <ContentLine key={scrollOffset + i} line={line} />
             ))
           )}
         </Box>

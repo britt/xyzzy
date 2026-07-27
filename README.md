@@ -145,6 +145,7 @@ would write.
 | ------------------ | --------------------------------------------------- |
 | `Tab` / `Shift+Tab`| Next / previous category (wraps).                    |
 | `↑` / `↓`          | Move through the selected category's entries.        |
+| `PgUp` / `PgDn`    | Scroll the content pane when an entry doesn't fit.   |
 | `e`                | Edit the selected entry's file in `$EDITOR`.          |
 | `p`                | Play-test: New Game, or resume a save slot.           |
 | `Escape`           | Return focus to the sidebar.                          |

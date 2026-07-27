@@ -24,6 +24,8 @@ export interface HotKeyContext {
   hasLiveSession: boolean;
   /** Whether a provider and model factory are available to start a session. */
   canPlay: boolean;
+  /** Whether the content pane has more lines than fit. */
+  canScrollContent?: boolean;
 }
 
 export function hotKeysFor(context: HotKeyContext): HotKey[] {
@@ -34,6 +36,7 @@ export function hotKeysFor(context: HotKeyContext): HotKey[] {
     isConfigCategory,
     hasLiveSession,
     canPlay,
+    canScrollContent = false,
   } = context;
 
   if (submenuOpen) {
@@ -53,6 +56,9 @@ export function hotKeysFor(context: HotKeyContext): HotKey[] {
   // Up/Down only move the selection when there is somewhere to move to.
   if (!isConfigCategory && entryCount > 1) {
     keys.push({ key: "↑↓", label: "Entity" });
+  }
+  if (canScrollContent) {
+    keys.push({ key: "PgUp/PgDn", label: "Scroll" });
   }
   // Editing needs a selection; the config category always has one implicitly.
   if (isConfigCategory || entryCount > 0) {

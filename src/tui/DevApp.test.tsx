@@ -634,7 +634,7 @@ class TtyStdin extends EventEmitter {
   };
 }
 
-const ANSI = new RegExp(`${String.fromCharCode(27)}\\[[0-9;]*m`, "g");
+const ANSI = new RegExp(`${String.fromCharCode(27)}\\[[0-9;]*[A-Za-z]`, "g");
 
 function frameGeometry(stdout: SizedStdout) {
   const lines = stdout.lastFrame().replace(/\n$/, "").split("\n");
@@ -850,5 +850,118 @@ describe("DevApp hot-key footer", () => {
     expect(frame).toContain("Quit");
     expect(frame).not.toContain("Play");
     unmount();
+  });
+});
+
+/** A character with enough fields to overflow a short pane. */
+const crowded: Adventure = {
+  ...adventure,
+  entities: {
+    ...adventure.entities,
+    characters: [
+      {
+        id: "grimble",
+        name: "Grimble",
+        persona: "A suspicious hermit who hoards secrets and trusts nobody.",
+        location: "cavern",
+        history: ["Met the player", "Refused the offer", "Took the coin"],
+        state: { trust: 10, mood: "wary" },
+        beats: [{ id: "confess", description: "d" }],
+        interactions: [{ id: "haggle", description: "d" }],
+      },
+    ],
+  },
+};
+
+const frameText = (stdout: SizedStdout) =>
+  stdout.lastFrame().replace(/\n$/, "").replace(ANSI, "");
+
+/** Tab to Characters (2 tabs from the default config category). */
+async function toCharacters(stdin: TtyStdin) {
+  await press(stdin, "\t");
+  await press(stdin, "\t");
+}
+
+describe("DevApp content pane scrolling", () => {
+  it("never renders a pane taller than the terminal, however crowded the entity", async () => {
+    const { stdout, stdin, app } = renderSized(74, 14, { adventure: crowded });
+    await toCharacters(stdin);
+    expect(frameGeometry(stdout).height).toBeLessThan(14);
+    expect(frameGeometry(stdout).maxWidth).toBeLessThanOrEqual(74);
+    app.unmount();
+  });
+
+  it("renders each label intact rather than interleaving it with its value", async () => {
+    const { stdout, stdin, app } = renderSized(74, 14, { adventure: crowded });
+    await toCharacters(stdin);
+    const text = frameText(stdout);
+    // The corruption this replaced produced fragments like "PeA suspicious".
+    expect(text).toContain("Persona");
+    expect(text).not.toMatch(/Pe[A-Z]/);
+    expect(text).not.toMatch(/Hi\(none\)/);
+    app.unmount();
+  });
+
+  it("PgDn reveals content below the fold, and PgUp returns to the top", async () => {
+    const { stdout, stdin, app } = renderSized(74, 14, { adventure: crowded });
+    await toCharacters(stdin);
+
+    const atTop = frameText(stdout);
+    expect(atTop).toContain("Grimble");
+    expect(atTop).not.toContain("Interactions"); // below the fold
+
+    await press(stdin, "\x1b[6~"); // PgDn
+    const scrolled = frameText(stdout);
+    expect(scrolled).toContain("Interactions");
+    expect(scrolled).not.toBe(atTop);
+
+    await press(stdin, "\x1b[5~"); // PgUp
+    expect(frameText(stdout)).toContain("Grimble");
+    app.unmount();
+  });
+
+  it("does not scroll past the end", async () => {
+    const { stdout, stdin, app } = renderSized(74, 14, { adventure: crowded });
+    await toCharacters(stdin);
+    for (let i = 0; i < 10; i++) await press(stdin, "\x1b[6~");
+    const end = frameText(stdout);
+    expect(end).toContain("Interactions"); // last group still visible
+    expect(frameGeometry(stdout).height).toBeLessThan(14);
+    app.unmount();
+  });
+
+  it("returns to the top when a different entity is selected", async () => {
+    const twoChars: Adventure = {
+      ...crowded,
+      entities: {
+        ...crowded.entities,
+        characters: [
+          crowded.entities!.characters![0]!,
+          { id: "other", name: "Other", persona: "p", history: [], state: {} },
+        ],
+      },
+    };
+    const { stdout, stdin, app } = renderSized(74, 14, { adventure: twoChars });
+    await toCharacters(stdin);
+    await press(stdin, "\x1b[6~"); // scroll down
+    // The lowercase id is the heading's subtitle, unique to the content pane
+    // (the sidebar shows the capitalised name), so it proves we scrolled past it.
+    expect(frameText(stdout)).not.toContain("grimble");
+
+    await press(stdin, DOWN); // select the next character
+    expect(frameText(stdout)).toContain("other"); // subtitle visible: back at the top
+    app.unmount();
+  });
+
+  it("offers the scroll keys only when the content actually overflows", async () => {
+    const tall = renderSized(74, 40, { adventure: crowded });
+    await toCharacters(tall.stdin);
+    expect(frameText(tall.stdout)).not.toContain("Scroll");
+    tall.app.unmount();
+
+    const short = renderSized(74, 14, { adventure: crowded });
+    await toCharacters(short.stdin);
+    expect(frameText(short.stdout)).toContain("Scroll");
+    short.app.unmount();
   });
 });

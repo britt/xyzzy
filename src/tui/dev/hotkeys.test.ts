@@ -77,3 +77,19 @@ describe("hotKeysFor", () => {
     });
   });
 });
+
+describe("hotKeysFor content scrolling", () => {
+  it("offers the scroll keys only when the pane overflows", () => {
+    expect(keys(sidebar)).not.toContain("PgUp/PgDn");
+    expect(keys({ ...sidebar, canScrollContent: true })).toContain("PgUp/PgDn");
+  });
+
+  it("does not offer them while the submenu or a play session owns the keyboard", () => {
+    expect(keys({ ...sidebar, submenuOpen: true, canScrollContent: true })).not.toContain(
+      "PgUp/PgDn",
+    );
+    expect(
+      keys({ ...sidebar, focus: "play", canScrollContent: true }),
+    ).not.toContain("PgUp/PgDn");
+  });
+});
