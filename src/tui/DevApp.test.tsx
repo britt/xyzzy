@@ -774,3 +774,81 @@ describe("DevApp keeps an embedded play session inside the layout", () => {
     app.unmount();
   });
 });
+
+describe("DevApp hot-key footer", () => {
+  it("shows the sidebar's keys on the config category, without entity navigation", () => {
+    const dir = tmpAdventure();
+    const { lastFrame, unmount } = mountForPlay(dir);
+    const frame = lastFrame()!;
+    expect(frame).toContain("Tab");
+    expect(frame).toContain("Edit");
+    expect(frame).toContain("Play");
+    expect(frame).toContain("Quit");
+    expect(frame).not.toContain("Entity"); // config has no entity list
+    unmount();
+  });
+
+  it("adds entity navigation once a category with several entries is selected", async () => {
+    const dir = tmpAdventure();
+    const { lastFrame, stdin, unmount } = mountForPlay(dir);
+    await toRooms(stdin);
+    expect(lastFrame()).toContain("Entity");
+    unmount();
+  });
+
+  it("drops edit and navigation in an empty category", async () => {
+    const empty: Adventure = { meta: adventure.meta, premise: "p", start: {} };
+    const { lastFrame, stdin, unmount } = render(
+      <DevApp adventure={empty} adventureDir="/tmp/does-not-matter" />,
+    );
+    await press(stdin, "\t"); // -> Beats, which has no entries
+    const frame = lastFrame()!;
+    expect(frame).not.toContain("Entity");
+    expect(frame).not.toContain("Edit");
+    expect(frame).toContain("Quit");
+    unmount();
+  });
+
+  it("shows only the submenu's keys while the play submenu is open", async () => {
+    const dir = tmpAdventure();
+    const { lastFrame, stdin, unmount } = mountForPlay(dir);
+    await press(stdin, "p");
+    const frame = lastFrame()!;
+    expect(frame).toContain("Choose");
+    expect(frame).toContain("Start");
+    expect(frame).toContain("Cancel");
+    expect(frame).not.toContain("Quit");
+    expect(frame).not.toContain("Category");
+    unmount();
+  });
+
+  it("shows only Escape while the play session has focus", async () => {
+    const dir = tmpAdventure();
+    const { lastFrame, stdin, unmount } = mountForPlay(dir);
+    await press(stdin, "p");
+    await press(stdin, "\r");
+    const frame = lastFrame()!;
+    expect(frame).toContain("Sidebar");
+    expect(frame).not.toContain("Quit");
+    expect(frame).not.toContain("Category");
+    unmount();
+  });
+
+  it("offers Resume rather than Play once a session is live but unfocused", async () => {
+    const dir = tmpAdventure();
+    const { lastFrame, stdin, unmount } = mountForPlay(dir);
+    await press(stdin, "p");
+    await press(stdin, "\r");
+    await press(stdin, ESC);
+    expect(lastFrame()).toContain("Resume");
+    unmount();
+  });
+
+  it("hides play entirely when no provider is available to start a session", () => {
+    const { lastFrame, unmount } = mount();
+    const frame = lastFrame()!;
+    expect(frame).toContain("Quit");
+    expect(frame).not.toContain("Play");
+    unmount();
+  });
+});

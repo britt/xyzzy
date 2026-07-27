@@ -55,6 +55,8 @@ export function devLayout(
 
 /** Rows the play pane spends on its status bar and input line. */
 export const PLAY_CHROME_ROWS = 3;
+/** Rows the hot-key footer occupies at the bottom of the screen. */
+export const FOOTER_ROWS = 1;
 
 /**
  * Viewport for an embedded play session's bounded scrollback: the content
@@ -67,6 +69,6 @@ export function playViewport(
 ): { rows: number; width: number } | undefined {
   if (layout.height === undefined || layout.width === undefined) return undefined;
   const width = Math.max(1, layout.width - layout.sidebarWidth - SIDEBAR_GAP);
-  const rows = Math.max(1, layout.height - PLAY_CHROME_ROWS);
+  const rows = Math.max(1, layout.height - PLAY_CHROME_ROWS - FOOTER_ROWS);
   return { rows, width };
 }

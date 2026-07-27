@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   DEFAULT_SIDEBAR_WIDTH,
   PLAY_CHROME_ROWS,
+  FOOTER_ROWS,
   SIDEBAR_GAP,
   playViewport,
   MAX_SIDEBAR_WIDTH,
@@ -47,11 +48,11 @@ describe("devLayout", () => {
 });
 
 describe("playViewport", () => {
-  it("gives the play pane the content pane's interior, less its own chrome", () => {
+  it("gives the play pane the content pane's interior, less its own chrome and the hot-key footer", () => {
     const layout = devLayout(120, 40); // width 120, height 39, sidebar 30
     expect(playViewport(layout)).toEqual({
       width: 120 - 30 - SIDEBAR_GAP,
-      rows: 39 - PLAY_CHROME_ROWS,
+      rows: 39 - PLAY_CHROME_ROWS - FOOTER_ROWS,
     });
   });
 

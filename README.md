@@ -150,6 +150,11 @@ would write.
 | `Escape`           | Return focus to the sidebar.                          |
 | `q`                | Quit.                                                 |
 
+A footer along the bottom lists the keys that work *right now*: entity
+navigation only appears when the selected category has more than one entry,
+`e` disappears in an empty category, and while the play submenu or an active
+play session has the keyboard it lists only that context's keys.
+
 Pressing `e` opens the file the selected entry is actually defined in — which
 may be `adventure.yaml` itself, or a file under `rooms/`, `items/`, etc. that
 holds several entities under a name unrelated to any of their ids. When the

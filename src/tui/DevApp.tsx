@@ -20,7 +20,11 @@ import {
   resolveAdventureFile,
   type EntitySourceMap,
 } from "../world/loader.js";
-import { formatIssues, validateAdventure, type ValidationIssue } from "../world/validator.js";
+import {
+  formatIssues,
+  validateAdventure,
+  type ValidationIssue,
+} from "../world/validator.js";
 import { entityFilePath, type EntityKind } from "../world/entityWriter.js";
 import {
   CATEGORIES,
@@ -29,8 +33,13 @@ import {
   type CatalogEntry,
   type Category,
 } from "./dev/entityCatalog.js";
-import { renderConfigFields, renderFieldsFor, type FieldRow } from "./dev/renderFields.js";
+import {
+  renderConfigFields,
+  renderFieldsFor,
+  type FieldRow,
+} from "./dev/renderFields.js";
 import { devLayout, playViewport } from "./dev/layout.js";
+import { hotKeysFor } from "./dev/hotkeys.js";
 
 export interface DevAppProps {
   adventure: Adventure;
@@ -89,7 +98,8 @@ function useTerminalSize(): { columns?: number; rows?: number } {
 
   useEffect(() => {
     if (!stdout) return;
-    const onResize = () => setSize({ columns: stdout.columns, rows: stdout.rows });
+    const onResize = () =>
+      setSize({ columns: stdout.columns, rows: stdout.rows });
     stdout.on("resize", onResize);
     return () => {
       stdout.off("resize", onResize);
@@ -148,7 +158,8 @@ export function DevApp({
   const { columns, rows } = useTerminalSize();
   const layout = devLayout(columns, rows);
   const [category, setCategory] = useState<Category>("config");
-  const [selection, setSelection] = useState<SelectionByCategory>(INITIAL_SELECTION);
+  const [selection, setSelection] =
+    useState<SelectionByCategory>(INITIAL_SELECTION);
   const [adventure, setAdventure] = useState(initialAdventure);
   const [issues, setIssues] = useState<Record<string, ValidationIssue[]>>({});
   const [sources, setSources] = useState<EntitySourceMap>(() =>
@@ -161,6 +172,9 @@ export function DevApp({
 
   const saves = listSaves(adventureDir);
   const submenuOptions = ["New Game", ...saves];
+  // Without these a session can't be mounted, so `p` must not offer one —
+  // starting one anyway would move focus to a pane that never appears.
+  const canPlay = Boolean(provider && makeModel && listModels);
 
   async function startPlay(optionIndex: number) {
     const state =
@@ -173,7 +187,10 @@ export function DevApp({
   }
 
   const entries = entriesForCategory(adventure, category);
-  const index = entries.length === 0 ? 0 : Math.min(selection[category], entries.length - 1);
+  const index =
+    entries.length === 0
+      ? 0
+      : Math.min(selection[category], entries.length - 1);
   const currentEntry = category === "config" ? undefined : entries[index];
   const currentKey =
     category === "config"
@@ -217,7 +234,10 @@ export function DevApp({
       openEditor?.(path);
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
-      setIssues((prev) => ({ ...prev, [currentKey]: [{ path: "(editor)", message }] }));
+      setIssues((prev) => ({
+        ...prev,
+        [currentKey]: [{ path: "(editor)", message }],
+      }));
       return;
     }
 
@@ -235,7 +255,10 @@ export function DevApp({
       result = {
         ok: false,
         issues: [
-          { path: "(file)", message: err instanceof Error ? err.message : String(err) },
+          {
+            path: "(file)",
+            message: err instanceof Error ? err.message : String(err),
+          },
         ],
       };
     }
@@ -274,7 +297,7 @@ export function DevApp({
       }
       return;
     }
-    if (input === "p") {
+    if (input === "p" && canPlay) {
       // A live session re-focuses; otherwise offer New Game / Resume.
       if (playState) setFocus("play");
       else {
@@ -294,11 +317,16 @@ export function DevApp({
     if (key.tab) {
       const step = key.shift ? -1 : 1;
       const i = CATEGORIES.indexOf(category);
-      setCategory(CATEGORIES[(i + step + CATEGORIES.length) % CATEGORIES.length]!);
+      setCategory(
+        CATEGORIES[(i + step + CATEGORIES.length) % CATEGORIES.length]!,
+      );
       return;
     }
     if (key.downArrow && entries.length > 0) {
-      setSelection((s) => ({ ...s, [category]: Math.min(entries.length - 1, index + 1) }));
+      setSelection((s) => ({
+        ...s,
+        [category]: Math.min(entries.length - 1, index + 1),
+      }));
       return;
     }
     if (key.upArrow && entries.length > 0) {
@@ -323,76 +351,94 @@ export function DevApp({
           return entity ? renderFieldsFor(category, entity) : [];
         })();
 
+  const hotKeys = hotKeysFor({
+    focus,
+    submenuOpen,
+    entryCount: entries.length,
+    isConfigCategory: category === "config",
+    hasLiveSession: playState !== null,
+    canPlay,
+  });
+
   return (
-    <Box
-      flexDirection="row"
-      width={layout.width}
-      height={layout.height}
-      overflow="hidden"
-    >
-      <Box
-        flexDirection="column"
-        width={layout.sidebarWidth}
-        flexShrink={0}
-        marginRight={2}
-        overflow="hidden"
-      >
-        {CATEGORIES.map((c) => (
-          <Text key={c} inverse={c === category}>
-            {CATEGORY_LABELS[c]}
-          </Text>
-        ))}
-        <Text> </Text>
-        {entries.map((e, i) => (
-          <Text key={`${e.kind}:${e.id}`} inverse={i === index}>
-            {"  " + e.label}
-            {issues[entityKey(e.kind, e.id)] ? "  ⚠" : ""}
-          </Text>
-        ))}
-      </Box>
-      <Box flexDirection="column" flexGrow={1} overflow="hidden">
-        {submenuOpen ? (
-          <Box flexDirection="column">
-            <Text>Play:</Text>
-            {submenuOptions.map((opt, i) => (
-              <Text key={opt} inverse={i === submenuIndex}>
-                {opt}
-              </Text>
-            ))}
-          </Box>
-        ) : playState && provider && makeModel && listModels ? (
-          <App
-            adventure={adventure}
-            initialState={playState}
-            provider={provider}
-            makeModel={makeModel}
-            makeDetector={makeDetector}
-            listModels={listModels}
-            providers={providers}
-            adventureDir={adventureDir}
-            saveSlot={saveSlot}
-            inputActive={focus === "play"}
-            // Embedded, so the transcript must stay inside the content pane
-            // rather than being written above the whole screen via <Static>.
-            scrollbackMode="bounded"
-            scrollbackViewport={playViewport(layout)}
-            onQuit={() => {
-              setPlayState(null);
-              setFocus("sidebar");
-            }}
-          />
-        ) : currentIssues ? (
-          <>
-            <Text color="red">⚠ Validation failed:</Text>
-            <Text color="red">{formatIssues(currentIssues)}</Text>
-          </>
-        ) : (
-          fieldRows.map((row) => (
-            <Text key={row.label} dimColor={row.dim}>
-              {row.label}: {row.value}
+    <Box flexDirection="column" width={layout.width} height={layout.height}>
+      <Box flexDirection="row" flexGrow={1} overflow="hidden">
+        <Box
+          flexDirection="column"
+          width={layout.sidebarWidth}
+          flexShrink={0}
+          marginRight={2}
+          overflow="hidden"
+        >
+          {CATEGORIES.map((c) => (
+            <Text key={c} inverse={c === category}>
+              {CATEGORY_LABELS[c]}
             </Text>
-          ))
-        )}
+          ))}
+          <Text> </Text>
+          {entries.map((e, i) => (
+            <Text key={`${e.kind}:${e.id}`} inverse={i === index}>
+              {"  " + e.label}
+              {issues[entityKey(e.kind, e.id)] ? "  ⚠" : ""}
+            </Text>
+          ))}
+        </Box>
+        <Box flexDirection="column" flexGrow={1} overflow="hidden">
+          {submenuOpen ? (
+            <Box flexDirection="column">
+              <Text>Play:</Text>
+              {submenuOptions.map((opt, i) => (
+                <Text key={opt} inverse={i === submenuIndex}>
+                  {opt}
+                </Text>
+              ))}
+            </Box>
+          ) : playState && provider && makeModel && listModels ? (
+            <App
+              adventure={adventure}
+              initialState={playState}
+              provider={provider}
+              makeModel={makeModel}
+              makeDetector={makeDetector}
+              listModels={listModels}
+              providers={providers}
+              adventureDir={adventureDir}
+              saveSlot={saveSlot}
+              inputActive={focus === "play"}
+              // Embedded, so the transcript must stay inside the content pane
+              // rather than being written above the whole screen via <Static>.
+              scrollbackMode="bounded"
+              scrollbackViewport={playViewport(layout)}
+              onQuit={() => {
+                setPlayState(null);
+                setFocus("sidebar");
+              }}
+            />
+          ) : currentIssues ? (
+            <>
+              <Text color="red">⚠ Validation failed:</Text>
+              <Text color="red">{formatIssues(currentIssues)}</Text>
+            </>
+          ) : (
+            fieldRows.map((row) => (
+              <Text key={row.label} dimColor={row.dim}>
+                {row.label}: {row.value}
+              </Text>
+            ))
+          )}
+        </Box>
+      </Box>
+
+      <Box flexShrink={0}>
+        {hotKeys.map((hotKey, i) => (
+          <Text key={hotKey.key}>
+            {i > 0 ? "   " : ""}
+            <Text bold color="cyan">
+              {hotKey.key}
+            </Text>
+            <Text dimColor> {hotKey.label}</Text>
+          </Text>
+        ))}
       </Box>
     </Box>
   );
