@@ -49,7 +49,6 @@ function mount(
   listModels: (config: ProviderConfig) => Promise<string[]> = async () => [],
   providers: Record<string, ProviderConfig> = {},
   makeDetector?: (config: ProviderConfig) => Detector,
-  adventureDir: string = mkdtempSync(join(tmpdir(), "xyzzy-tui-")),
   extra: {
     onQuit?: () => void;
     inputActive?: boolean;
@@ -66,7 +65,6 @@ function mount(
       makeDetector={makeDetector}
       listModels={listModels}
       providers={providers}
-      adventureDir={adventureDir}
       saveSlot="autosave"
       onQuit={extra.onQuit}
       inputActive={extra.inputActive}
@@ -77,6 +75,17 @@ function mount(
 }
 
 describe("App", () => {
+  // Saves are keyed by adventure.meta.id under $XDG_STATE_HOME, shared by
+  // every test in this suite — isolate each test's saves from the others'.
+  const savedState = process.env.XDG_STATE_HOME;
+  beforeEach(() => {
+    process.env.XDG_STATE_HOME = mkdtempSync(join(tmpdir(), "xyzzy-tui-state-"));
+  });
+  afterEach(() => {
+    if (savedState === undefined) delete process.env.XDG_STATE_HOME;
+    else process.env.XDG_STATE_HOME = savedState;
+  });
+
   it("seeds scrollback with the starting room and shows the status bar", () => {
     const { lastFrame, unmount } = mount(new FakeNarratorModel());
     expect(lastFrame()).toContain("A cold stone chamber.");
@@ -347,18 +356,10 @@ describe("App", () => {
   });
 
   it("/load with no argument lists known saves", async () => {
-    const dir = mkdtempSync(join(tmpdir(), "xyzzy-tui-"));
     const state = newGameState(adventure, "now");
-    await saveGame(dir, "autosave", state);
-    await saveGame(dir, "before-boss", state);
-    const { lastFrame, stdin, unmount } = mount(
-      new FakeNarratorModel(),
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      dir,
-    );
+    await saveGame(adventure.meta.id, "autosave", state);
+    await saveGame(adventure.meta.id, "before-boss", state);
+    const { lastFrame, stdin, unmount } = mount(new FakeNarratorModel());
 
     await type(stdin, "/load");
 
@@ -369,16 +370,8 @@ describe("App", () => {
   });
 
   it("/load list lists known saves", async () => {
-    const dir = mkdtempSync(join(tmpdir(), "xyzzy-tui-"));
-    await saveGame(dir, "autosave", newGameState(adventure, "now"));
-    const { lastFrame, stdin, unmount } = mount(
-      new FakeNarratorModel(),
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      dir,
-    );
+    await saveGame(adventure.meta.id, "autosave", newGameState(adventure, "now"));
+    const { lastFrame, stdin, unmount } = mount(new FakeNarratorModel());
 
     await type(stdin, "/load list");
 
@@ -397,17 +390,9 @@ describe("App", () => {
   });
 
   it("/load <slot> still loads a specific save", async () => {
-    const dir = mkdtempSync(join(tmpdir(), "xyzzy-tui-"));
     const state = newGameState(adventure, "now");
-    await saveGame(dir, "before-boss", state);
-    const { lastFrame, stdin, unmount } = mount(
-      new FakeNarratorModel(),
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      dir,
-    );
+    await saveGame(adventure.meta.id, "before-boss", state);
+    const { lastFrame, stdin, unmount } = mount(new FakeNarratorModel());
 
     await type(stdin, "/load before-boss");
 
@@ -628,7 +613,6 @@ describe("embeddability", () => {
       undefined,
       undefined,
       undefined,
-      undefined,
       { onQuit: () => quitCalls++ },
     );
 
@@ -657,7 +641,6 @@ describe("embeddability", () => {
       undefined,
       undefined,
       undefined,
-      undefined,
       { inputActive: false },
     );
     const before = lastFrame();
@@ -670,14 +653,12 @@ describe("embeddability", () => {
   });
 
   it("reacts to input again once inputActive becomes true", async () => {
-    const dir = mkdtempSync(join(tmpdir(), "xyzzy-tui-"));
     const { lastFrame, stdin, rerender, unmount } = mount(
       undefined,
       undefined,
       undefined,
       undefined,
       undefined,
-      dir,
       { inputActive: false },
     );
 
@@ -689,7 +670,6 @@ describe("embeddability", () => {
         makeModel={() => new FakeNarratorModel()}
         listModels={async () => []}
         providers={{}}
-        adventureDir={dir}
         saveSlot="autosave"
         inputActive={true}
       />,
@@ -742,7 +722,6 @@ describe("scrollback modes", () => {
       undefined,
       undefined,
       undefined,
-      undefined,
       { scrollbackMode: "bounded", scrollbackViewport: { rows: 6, width: 60 } },
     );
 
@@ -763,7 +742,6 @@ describe("scrollback modes", () => {
       undefined,
       undefined,
       undefined,
-      undefined,
       { scrollbackMode: "bounded", scrollbackViewport: { rows: 6, width: 60 } },
     );
 
@@ -778,7 +756,6 @@ describe("scrollback modes", () => {
     const { lastFrame, stdin, unmount } = mount(
       model,
       () => model,
-      undefined,
       undefined,
       undefined,
       undefined,
