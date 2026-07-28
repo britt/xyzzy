@@ -222,7 +222,7 @@ export function DevApp({
   const [submenuIndex, setSubmenuIndex] = useState(0);
   const [scroll, setScroll] = useState(0);
 
-  const saves = listSaves(adventureDir);
+  const saves = listSaves(adventure.meta.id);
   const submenuOptions = ["New Game", ...saves];
   // Without these a session can't be mounted, so `p` must not offer one —
   // starting one anyway would move focus to a pane that never appears.
@@ -232,7 +232,7 @@ export function DevApp({
     const state =
       optionIndex === 0
         ? newGameStateFor(adventure)
-        : await loadGame(adventureDir, saves[optionIndex - 1]!);
+        : await loadGame(adventure.meta.id, saves[optionIndex - 1]!);
     setPlayState(state);
     setSubmenuOpen(false);
     setFocus("play");
@@ -502,7 +502,6 @@ export function DevApp({
               makeDetector={makeDetector}
               listModels={listModels}
               providers={providers}
-              adventureDir={adventureDir}
               saveSlot={saveSlot}
               inputActive={focus === "play"}
               // Embedded, so the transcript must stay inside the content pane
