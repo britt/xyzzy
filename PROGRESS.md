@@ -509,3 +509,81 @@
 - Build: ✅ Successful (`bun run build`, zero errors).
 - Linting: ✅ Clean (`eslint .`, zero errors/warnings).
 - Completed: 2026-07-28
+
+## LLM Debugging View (docs/plans/2026-07-28-llm-debug-log-plan.md) - COMPLETE
+
+- Started: 2026-07-28
+- Goal: persist every detector/narrator LLM call made during a play session to
+  a per-session JSONL file, and add a read-only "LLM Logs" category to the
+  `xyzzy dev` sidebar for browsing them. Executed as 13 plan tasks, each its
+  own RED-GREEN-commit cycle.
+
+### Tasks
+
+- **1-5 · `llm/sessionLog.ts`** (19 tests): `sessionLogPath` mirroring
+  `engine/save.ts`'s `savesDir` (same slugify + hex fallback, under `logs/`
+  rather than `saves/`); `SessionRecorder` decorating a `NarratorModel`/
+  `Detector` to buffer each call's context, result and duration, recording
+  failures before rethrowing; `startSessionLog` writing the header line
+  immediately and appending one JSONL turn record per turn, best-effort like
+  `util/log.ts`; `listSessionLogs` (tolerant — a corrupt header falls back to
+  the filename) and `readSessionLog` (strict — names the bad line, so the TUI
+  can banner it).
+- **6 · `tui/dev/renderSessionLog.ts`** (7 tests): `renderSessionLogFields`
+  turning parsed records into the existing `FieldRow` shapes, so the current
+  `layoutFieldRows` → `ContentLine` pipeline renders logs with no new UI code.
+- **7-8 · catalog + hotkeys**: `"logs"` added to the `Category` union,
+  `CATEGORIES` and `CATEGORY_LABELS`; `isLogsCategory` on `HotKeyContext`
+  gating the Edit key, since logs are read-only.
+- **9 · `tui/App.tsx`** (5 new tests): optional `sessionLog` prop; model and
+  detector wrapped at every build site (so a mid-session `/model` or
+  `/provider` switch keeps recording), flushed and appended after each turn on
+  both the success and failure paths.
+- **10 · `tui/DevApp.tsx`** (9 new tests): `startPlay` mints a handle and
+  refreshes the listing; sidebar rows unified across entities and log files;
+  `entryCount`/`fieldRows`/`logContent` branch on the logs category; unreadable
+  logs banner inline.
+- **11 · `xyzzy play --log-llm`**: opt-in recording for standalone play
+  (`dev` always records). Verified manually per the plan — help text lists the
+  flag; with it a session file is written holding a single `type:"session"`
+  header line; without it no `logs/` directory is created at all.
+- **12 · docs**: README "LLM Logs" section and the `--log-llm` flag;
+  VERIFICATION_PLAN.md Scenarios 10 and 11, both exercisable with no reachable
+  model (a failed narrator call is exactly what makes the view useful).
+
+### Design decision taken during execution
+
+The plan's Task 10 test and its draft Scenario 10 both assumed the content pane
+would show a selected log while a play session was still live. It does not: a
+live session owns the content pane for every category (`DevApp.tsx`), and
+changing that would either unmount the session — losing the scrollback that
+`p`-to-resume depends on — or require hiding it behind `display="none"`.
+Confirmed with the developer and kept the existing precedence, so a session's
+own log is read after `/quit`-ing it; the sidebar lists it either way. Both the
+test and the shipped Scenario 10 reflect this.
+
+### Verification
+
+- Tests: 503 passing, 0 failing (up from 469; +34).
+- Coverage (thresholds 90/85/90/90 — lines/branches/functions/statements):
+  - `llm/sessionLog.ts` — 99.32 / 91.17 / 100 / 99.32
+  - `tui/dev/renderSessionLog.ts` — 100 / 100 / 100 / 100
+  - `tui/DevApp.tsx` — 99.76 / 95.67 / 100 / 99.76
+  - `tui/dev/hotkeys.ts` — 100 / 100 / 100 / 100
+  - `tui/dev/entityCatalog.ts` — 100 / 87.5 / 100 / 100
+  - `tui/App.tsx` — 94.24 / 82.7 / 100 / 94.24. Branch coverage sits below the
+    85% bar, but it was 80.83% on `origin/main` before this work and this
+    branch raises it; the untested branches are pre-existing `/model list`
+    error paths, not anything added here.
+  - Aggregate — 92.48 / 89.59 / 96.19 / 92.48.
+  - `cli/commands/play.ts` stays at 0%, matching `dev.ts`/`validate.ts`: CLI
+    wiring is verified manually by convention, not unit-tested.
+- Build: ✅ Successful (`bun run build`, zero errors).
+- Linting: ✅ Clean (`eslint .`, zero errors/warnings).
+- Typecheck: ✅ Clean (`tsc --noEmit`).
+- Note: one pre-existing DevApp test ("does not grow past the terminal height
+  as the transcript accumulates") intermittently exceeds its 5s limit under
+  coverage instrumentation when all 42 files run in parallel. It passes in
+  isolation under coverage on both this branch and `origin/main`, and a repeat
+  full run was green — contention, not a regression.
+- Completed: 2026-07-28
