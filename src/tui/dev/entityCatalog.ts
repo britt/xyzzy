@@ -1,7 +1,13 @@
 import type { Adventure } from "../../world/schema.js";
 import type { EntityKind } from "../../world/entityWriter.js";
 
-export type Category = "config" | "beats" | "characters" | "rooms" | "items";
+export type Category =
+  | "config"
+  | "beats"
+  | "characters"
+  | "rooms"
+  | "items"
+  | "logs";
 
 /** Fixed sidebar order, per the design doc. */
 export const CATEGORIES: readonly Category[] = [
@@ -10,6 +16,7 @@ export const CATEGORIES: readonly Category[] = [
   "characters",
   "rooms",
   "items",
+  "logs",
 ];
 
 export const CATEGORY_LABELS: Record<Category, string> = {
@@ -18,6 +25,7 @@ export const CATEGORY_LABELS: Record<Category, string> = {
   characters: "Characters",
   rooms: "Rooms",
   items: "Items",
+  logs: "LLM Logs",
 };
 
 export interface CatalogEntry {
@@ -31,7 +39,8 @@ export interface CatalogEntry {
  * List a category's entities in the adventure's own definition order
  * (inline `adventure.yaml` entries first, then conventional-directory
  * files — whatever order `loadAdventure` already produced). Returns `[]`
- * for the `config` category, which has no entity list of its own.
+ * for the `config` and `logs` categories, which have no entity list of their
+ * own — `logs` is a listing of session files, sourced separately by `DevApp`.
  */
 export function entriesForCategory(
   adventure: Adventure,
@@ -39,6 +48,7 @@ export function entriesForCategory(
 ): CatalogEntry[] {
   switch (category) {
     case "config":
+    case "logs":
       return [];
     case "beats":
       return (adventure.beats ?? []).map((b) => ({

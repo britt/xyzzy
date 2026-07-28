@@ -171,6 +171,7 @@ const INITIAL_SELECTION: SelectionByCategory = {
   characters: 0,
   rooms: 0,
   items: 0,
+  logs: 0,
 };
 
 function findEntity(
@@ -331,12 +332,14 @@ export function DevApp({
   const fieldRows: FieldRow[] =
     category === "config"
       ? renderConfigFields(adventure)
-      : (() => {
-          const entry = entries[index];
-          if (!entry) return [];
-          const entity = findEntity(adventure, entry);
-          return entity ? renderFieldsFor(category, entity) : [];
-        })();
+      : category === "logs"
+        ? []
+        : (() => {
+            const entry = entries[index];
+            if (!entry) return [];
+            const entity = findEntity(adventure, entry);
+            return entity ? renderFieldsFor(category, entity) : [];
+          })();
 
   // Flatten to exact terminal rows so the pane can never hand Ink more lines
   // than it has room for — Ink garbles an overflowing box rather than clipping.

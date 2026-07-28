@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { render } from "ink-testing-library";
 import { render as inkRender } from "ink";
 import { DevApp } from "./DevApp.js";
+import { CATEGORIES } from "./dev/entityCatalog.js";
 import type { Adventure } from "../world/schema.js";
 import { FakeNarratorModel, type NarratorModel } from "../llm/NarratorModel.js";
 import { saveGame } from "../engine/save.js";
@@ -79,7 +80,7 @@ describe("DevApp sidebar", () => {
 
   it("Tab wraps from the last category back to the first", async () => {
     const { lastFrame, stdin, unmount } = mount();
-    for (let i = 0; i < 5; i++) {
+    for (let i = 0; i < CATEGORIES.length; i++) {
       await press(stdin, "\t");
     }
     expect(lastFrame()).toContain("Cave of Echoes"); // back to Config
@@ -88,8 +89,9 @@ describe("DevApp sidebar", () => {
 
   it("Shift+Tab steps backwards, wrapping to the last category", async () => {
     const { lastFrame, stdin, unmount } = mount();
-    await press(stdin, "\x1b[Z"); // Shift+Tab
-    expect(lastFrame()).toContain("A key."); // Items, the last category
+    await press(stdin, "\x1b[Z"); // Shift+Tab wraps to LLM Logs, the last category
+    await press(stdin, "\x1b[Z"); // and steps back again to Items
+    expect(lastFrame()).toContain("A key.");
     unmount();
   });
 

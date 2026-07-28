@@ -143,9 +143,13 @@ export function renderConfigFields(adventure: Adventure): FieldRow[] {
   ];
 }
 
-/** Dispatch to the right renderer for a non-config category's entity. */
+/**
+ * Dispatch to the right renderer for an entity-bearing category's entity.
+ * `config` and `logs` are excluded: neither has a `CatalogEntry` list, and each
+ * has its own renderer (`renderConfigFields`, `renderSessionLogFields`).
+ */
 export function renderFieldsFor(
-  category: Exclude<Category, "config">,
+  category: Exclude<Category, "config" | "logs">,
   entity: Room | Item | Character | StoryBeat,
 ): FieldRow[] {
   switch (category) {

@@ -16,17 +16,36 @@ const adventure: Adventure = {
 
 describe("CATEGORIES", () => {
   it("lists categories in the required order", () => {
-    expect(CATEGORIES).toEqual(["config", "beats", "characters", "rooms", "items"]);
+    expect(CATEGORIES).toEqual([
+      "config",
+      "beats",
+      "characters",
+      "rooms",
+      "items",
+      "logs",
+    ]);
   });
 
   it("has a display label for every category", () => {
     for (const c of CATEGORIES) expect(CATEGORY_LABELS[c]).toBeTruthy();
+  });
+
+  it("includes logs as the last category, after items", () => {
+    expect(CATEGORIES[CATEGORIES.length - 1]).toBe("logs");
+  });
+
+  it("labels the logs category 'LLM Logs'", () => {
+    expect(CATEGORY_LABELS.logs).toBe("LLM Logs");
   });
 });
 
 describe("entriesForCategory", () => {
   it("returns an empty list for the config category", () => {
     expect(entriesForCategory(adventure, "config")).toEqual([]);
+  });
+
+  it("returns no entries for the logs category (DevApp sources these separately)", () => {
+    expect(entriesForCategory(adventure, "logs")).toEqual([]);
   });
 
   it("lists rooms with kind, id, and name as the label", () => {
