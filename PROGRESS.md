@@ -432,3 +432,80 @@
   editors (vim/nano, and the `vi` fallback) may misbehave. GUI editors are
   unaffected. Deferred rather than shipped unverified — it needs a TTY to
   validate and involves Ink's `setRawMode` refcounting.
+
+## Move saves to `$XDG_STATE_HOME/xyzzy/<adventure id>/saves/` - COMPLETE
+
+- Started: 2026-07-28
+- Goal: saves were `<adventureDir>/saves/`, tied to wherever the adventure
+  happened to live. Moved them to a global, XDG-standard location keyed by
+  the adventure's `meta.id`, mirroring `util/log.ts`'s existing
+  `XDG_STATE_HOME` pattern, so saves survive moving/reinstalling the
+  adventure directory itself.
+- `engine/save.ts`: `savesDir`/`savePath`/`saveExists`/`listSaves`/
+  `saveGame`/`loadGame` now take an adventure id instead of a directory,
+  resolving to `$XDG_STATE_HOME/xyzzy/<slugified id>/saves` (default
+  `~/.local/state/xyzzy/<id>/saves`). The id is run through the existing
+  `util/slug.ts` `slugify` before use — `meta.id` is unrestricted,
+  untrusted `adventure.yaml` content, and building a path with it directly
+  would let a crafted id like `../../etc` escape the saves tree. Tests
+  cover the round trip, corrupt/missing/schema-invalid saves, the global
+  path shape, the XDG fallback, and the traversal-sanitization case.
+- `tui/App.tsx`: dropped the `adventureDir` prop (it was only ever used to
+  build save paths); `/save`, `/load`, and the post-turn autosave now key
+  off `adventure.meta.id`, which was already available via the `adventure`
+  prop. Backfilled a `/save` test — it turned out the slash command itself
+  had no test even before this change (only `/load` did), and since I
+  edited that exact line I added coverage for it rather than leave a
+  touched-but-unverified path.
+- `tui/DevApp.tsx`: its `listSaves`/`loadGame` calls (for the `p` play/
+  resume submenu) switched to `adventure.meta.id`; stopped passing the
+  now-removed `adventureDir` prop to the embedded `App`.
+- `cli/commands/play.ts`: `saveExists`/`loadGame` switched to
+  `adventure.meta.id`; stopped passing `adventureDir` to `App`. No
+  dedicated test file for `play.ts` (pre-existing convention, like
+  `index.ts`/`dev.ts`) — covered by VERIFICATION_PLAN Scenario 5.
+- `world/scaffolder.ts`: no longer creates a `saves/` dir or mentions it in
+  the scaffolded README, since saves are no longer part of the adventure
+  directory. `scaffolder.test.ts`'s "creates a saves/ directory" test was
+  flipped to assert the opposite (RED against the unchanged scaffolder,
+  then GREEN after removing the `mkdirSync`).
+- Docs: `README.md` (scaffold description, new saves-path note under
+  `/save`/`/load`) and `VERIFICATION_PLAN.md` (Scenario 1 no longer expects
+  a local `saves/` dir; Scenario 5 scopes `XDG_STATE_HOME` to a scratch dir,
+  mirroring how Scenario 4 already scopes `XDG_CONFIG_HOME`, and checks
+  saves under the new global path).
+- Tests: 456 passing, 0 failing (up from 455 — one test file rewritten,
+  one new `/save` test added).
+- Coverage: Stmts 92.25%, Branch 89.17%, Funcs 95.72%, Lines 92.25%
+  (aggregate; `vitest.config.ts` has no per-file thresholds configured).
+  `engine/save.ts` itself is 100% covered on all four metrics.
+- Build: ✅ Successful (`bun run build`, zero errors).
+- Linting: ✅ Clean (`eslint .`, zero errors/warnings).
+- Typecheck: ✅ Clean (`tsc --noEmit`).
+- Completed: 2026-07-28
+
+## Fix: empty-slug save collision - COMPLETE
+
+- Started: 2026-07-28
+- Goal: code review of the above flagged that `slugify(adventureId)` can
+  return `""` for an id made entirely of characters the slug regex strips
+  (e.g. `"..."` or `"!!!"`). `path.join` silently drops that empty segment,
+  so `savesDir` collapsed to the shared `xyzzy/saves` bucket instead of a
+  per-adventure path — any two adventures whose ids both reduced to empty
+  would silently overwrite each other's saves, undermining the isolation
+  the `slugify` call exists to provide.
+- `engine/save.test.ts`: RED — added
+  `"keeps ids that slugify to an empty string distinct from each other"`,
+  asserting `savePath("...", "autosave")` and `savePath("!!!", "autosave")`
+  resolve to different, traversal-free paths. Confirmed it failed
+  (`Object.is` equality) against the unfixed `savesDir`.
+- `engine/save.ts`: GREEN — `savesDir` now falls back to a hex encoding of
+  the raw id (`Buffer.from(adventureId, "utf8").toString("hex")`) whenever
+  `slugify` returns an empty string, preserving per-adventure uniqueness
+  while keeping the path traversal-free.
+- Tests: 457 passing, 0 failing (up from 456 — one new test added).
+- Coverage: `engine/save.ts` remains 100% on all four metrics; aggregate
+  unchanged at 92.26%/89.18%/95.72%/92.26%.
+- Build: ✅ Successful (`bun run build`, zero errors).
+- Linting: ✅ Clean (`eslint .`, zero errors/warnings).
+- Completed: 2026-07-28

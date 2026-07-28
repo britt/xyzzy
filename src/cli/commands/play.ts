@@ -33,8 +33,8 @@ export async function play(path: string, opts: PlayOptions): Promise<void> {
 
   const slot = opts.save ?? DEFAULT_SLOT;
   const state =
-    opts.save && saveExists(adventureDir, slot)
-      ? await loadGame(adventureDir, slot)
+    opts.save && saveExists(adventure.meta.id, slot)
+      ? await loadGame(adventure.meta.id, slot)
       : newGameState(adventure, new Date().toISOString());
 
   log.info("play started", {
@@ -54,7 +54,6 @@ export async function play(path: string, opts: PlayOptions): Promise<void> {
       makeDetector: createDetector,
       listModels,
       providers,
-      adventureDir,
       saveSlot: slot,
     }),
   );

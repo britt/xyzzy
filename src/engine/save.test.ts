@@ -1,7 +1,7 @@
 import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { listSaves, loadGame, SaveLoadError, saveExists, saveGame } from "./save.js";
 import { newGameState } from "./state.js";
 import { savePath } from "./save.js";
@@ -13,39 +13,42 @@ const adventure: Adventure = {
   start: { room: "start" },
 };
 
-function tmp(): string {
-  return mkdtempSync(join(tmpdir(), "xyzzy-save-"));
-}
+const savedState = process.env.XDG_STATE_HOME;
+
+beforeEach(() => {
+  process.env.XDG_STATE_HOME = mkdtempSync(join(tmpdir(), "xyzzy-save-state-"));
+});
+afterEach(() => {
+  if (savedState === undefined) delete process.env.XDG_STATE_HOME;
+  else process.env.XDG_STATE_HOME = savedState;
+});
 
 describe("saveGame / loadGame", () => {
   it("round-trips a game state", async () => {
-    const dir = tmp();
     const state = newGameState(adventure, "now");
-    expect(saveExists(dir, "autosave")).toBe(false);
-    await saveGame(dir, "autosave", state);
-    expect(saveExists(dir, "autosave")).toBe(true);
-    const loaded = await loadGame(dir, "autosave");
+    expect(saveExists("a", "autosave")).toBe(false);
+    await saveGame("a", "autosave", state);
+    expect(saveExists("a", "autosave")).toBe(true);
+    const loaded = await loadGame("a", "autosave");
     expect(loaded).toEqual(state);
   });
 
   it("throws SaveLoadError for a missing slot", async () => {
-    await expect(loadGame(tmp(), "nope")).rejects.toBeInstanceOf(SaveLoadError);
+    await expect(loadGame("a", "nope")).rejects.toBeInstanceOf(SaveLoadError);
   });
 
   it("throws SaveLoadError for a corrupt save", async () => {
-    const dir = tmp();
-    await saveGame(dir, "autosave", newGameState(adventure, "now"));
-    writeFileSync(savePath(dir, "autosave"), "{ not valid json", "utf8");
-    await expect(loadGame(dir, "autosave")).rejects.toBeInstanceOf(
+    await saveGame("a", "autosave", newGameState(adventure, "now"));
+    writeFileSync(savePath("a", "autosave"), "{ not valid json", "utf8");
+    await expect(loadGame("a", "autosave")).rejects.toBeInstanceOf(
       SaveLoadError,
     );
   });
 
   it("throws SaveLoadError for a schema-invalid save", async () => {
-    const dir = tmp();
-    await saveGame(dir, "autosave", newGameState(adventure, "now"));
-    writeFileSync(savePath(dir, "autosave"), JSON.stringify({ turn: 1 }), "utf8");
-    await expect(loadGame(dir, "autosave")).rejects.toBeInstanceOf(
+    await saveGame("a", "autosave", newGameState(adventure, "now"));
+    writeFileSync(savePath("a", "autosave"), JSON.stringify({ turn: 1 }), "utf8");
+    await expect(loadGame("a", "autosave")).rejects.toBeInstanceOf(
       SaveLoadError,
     );
   });
@@ -53,14 +56,52 @@ describe("saveGame / loadGame", () => {
 
 describe("listSaves", () => {
   it("returns an empty list when no saves directory exists", () => {
-    expect(listSaves(tmp())).toEqual([]);
+    expect(listSaves("a")).toEqual([]);
   });
 
   it("lists save slot names, sorted", async () => {
-    const dir = tmp();
     const state = newGameState(adventure, "now");
-    await saveGame(dir, "autosave", state);
-    await saveGame(dir, "before-boss", state);
-    expect(listSaves(dir)).toEqual(["autosave", "before-boss"]);
+    await saveGame("a", "autosave", state);
+    await saveGame("a", "before-boss", state);
+    expect(listSaves("a")).toEqual(["autosave", "before-boss"]);
+  });
+});
+
+describe("global save location", () => {
+  it("stores saves under $XDG_STATE_HOME/xyzzy/<adventure id>/saves, not inside the adventure directory", () => {
+    expect(savePath("cave-of-echoes", "autosave")).toBe(
+      join(
+        process.env.XDG_STATE_HOME!,
+        "xyzzy",
+        "cave-of-echoes",
+        "saves",
+        "autosave.json",
+      ),
+    );
+  });
+
+  it("falls back to ~/.local/state/xyzzy when XDG_STATE_HOME is unset", () => {
+    delete process.env.XDG_STATE_HOME;
+    expect(savePath("cave-of-echoes", "autosave")).toContain(
+      join(".local", "state", "xyzzy", "cave-of-echoes", "saves"),
+    );
+  });
+
+  it("sanitizes an adventure id containing path-traversal characters", () => {
+    const path = savePath("../../evil", "autosave");
+    expect(path.startsWith(join(process.env.XDG_STATE_HOME!, "xyzzy"))).toBe(
+      true,
+    );
+    expect(path).not.toContain("..");
+  });
+
+  it("keeps ids that slugify to an empty string distinct from each other", () => {
+    // "..." and "!!!" both strip to "" under slugify — without a fallback
+    // they'd collapse to the same shared saves/ directory.
+    const dotsPath = savePath("...", "autosave");
+    const bangsPath = savePath("!!!", "autosave");
+    expect(dotsPath).not.toBe(bangsPath);
+    expect(dotsPath).not.toContain("..");
+    expect(bangsPath).not.toContain("..");
   });
 });

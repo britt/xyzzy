@@ -1,7 +1,9 @@
 import { mkdirSync, readFileSync, readdirSync, renameSync, writeFileSync } from "node:fs";
 import { existsSync } from "node:fs";
+import { homedir } from "node:os";
 import { join } from "node:path";
 import { GameState } from "../world/schema.js";
+import { slugify } from "../util/slug.js";
 
 /** Thrown when a save cannot be read or fails validation. */
 export class SaveLoadError extends Error {
@@ -11,22 +13,37 @@ export class SaveLoadError extends Error {
   }
 }
 
-function savesDir(adventureDir: string): string {
-  return join(adventureDir, "saves");
+/**
+ * `$XDG_STATE_HOME/xyzzy/<adventure id>/saves` (default
+ * `~/.local/state/xyzzy/<adventure id>/saves`) — global, not inside the
+ * adventure directory, so saves survive moving/reinstalling the adventure.
+ * The id is slugified since it comes from adventure.yaml (untrusted content
+ * for a downloaded adventure) and is otherwise unrestricted by the schema —
+ * without this a crafted `meta.id` like `../../etc` could escape the saves
+ * tree. An id made entirely of characters `slugify` strips (e.g. `"..."`)
+ * would otherwise collapse to an empty segment and collide with every other
+ * such id in one shared directory, so that case falls back to a hex
+ * encoding of the raw id instead.
+ */
+function savesDir(adventureId: string): string {
+  const base = process.env.XDG_STATE_HOME ?? join(homedir(), ".local", "state");
+  const slug =
+    slugify(adventureId) || Buffer.from(adventureId, "utf8").toString("hex");
+  return join(base, "xyzzy", slug, "saves");
 }
 
-export function savePath(adventureDir: string, slot: string): string {
-  return join(savesDir(adventureDir), `${slot}.json`);
+export function savePath(adventureId: string, slot: string): string {
+  return join(savesDir(adventureId), `${slot}.json`);
 }
 
 /** Whether a save slot exists on disk. */
-export function saveExists(adventureDir: string, slot: string): boolean {
-  return existsSync(savePath(adventureDir, slot));
+export function saveExists(adventureId: string, slot: string): boolean {
+  return existsSync(savePath(adventureId, slot));
 }
 
 /** List known save slot names, sorted alphabetically. */
-export function listSaves(adventureDir: string): string[] {
-  const dir = savesDir(adventureDir);
+export function listSaves(adventureId: string): string[] {
+  const dir = savesDir(adventureId);
   if (!existsSync(dir)) return [];
   return readdirSync(dir)
     .filter((f) => f.endsWith(".json"))
@@ -36,17 +53,17 @@ export function listSaves(adventureDir: string): string[] {
 
 /**
  * Persist game state atomically (temp file + rename) to
- * `<adventureDir>/saves/<slot>.json`, so an interrupted write never corrupts an
- * existing save.
+ * `$XDG_STATE_HOME/xyzzy/<adventure id>/saves/<slot>.json`, so an interrupted
+ * write never corrupts an existing save.
  */
 export async function saveGame(
-  adventureDir: string,
+  adventureId: string,
   slot: string,
   state: GameState,
 ): Promise<void> {
-  const dir = savesDir(adventureDir);
+  const dir = savesDir(adventureId);
   mkdirSync(dir, { recursive: true });
-  const target = savePath(adventureDir, slot);
+  const target = savePath(adventureId, slot);
   const tmp = `${target}.tmp`;
   writeFileSync(tmp, JSON.stringify(state, null, 2), "utf8");
   renameSync(tmp, target);
@@ -57,10 +74,10 @@ export async function saveGame(
  * {@link SaveLoadError}, never silently reset.
  */
 export async function loadGame(
-  adventureDir: string,
+  adventureId: string,
   slot: string,
 ): Promise<GameState> {
-  const target = savePath(adventureDir, slot);
+  const target = savePath(adventureId, slot);
   let text: string;
   try {
     text = readFileSync(target, "utf8");

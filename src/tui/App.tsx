@@ -29,8 +29,6 @@ export interface AppProps {
   listModels: (config: ProviderConfig) => Promise<string[]>;
   /** named providers from global config (for /provider list|use) */
   providers: Record<string, ProviderConfig>;
-  /** directory the adventure lives in (for saves) */
-  adventureDir: string;
   /** autosave slot */
   saveSlot: string;
   /**
@@ -175,7 +173,6 @@ export function App({
   makeDetector,
   listModels,
   providers,
-  adventureDir,
   saveSlot,
   onQuit,
   inputActive = true,
@@ -356,12 +353,12 @@ export function App({
         return true;
       }
       case "/save":
-        await saveGame(adventureDir, arg || saveSlot, state);
+        await saveGame(adventure.meta.id, arg || saveSlot, state);
         push("system", `Saved to slot "${arg || saveSlot}".`);
         return true;
       case "/load": {
         if (arg === "" || arg === "list") {
-          const saves = listSaves(adventureDir);
+          const saves = listSaves(adventure.meta.id);
           push(
             "system",
             saves.length
@@ -370,7 +367,7 @@ export function App({
           );
           return true;
         }
-        const loaded = await loadGame(adventureDir, arg);
+        const loaded = await loadGame(adventure.meta.id, arg);
         setState(loaded);
         push("system", `Loaded slot "${arg}".`);
         return true;
@@ -425,7 +422,7 @@ export function App({
         ok: true,
       });
       push("narrator", result.narration);
-      await saveGame(adventureDir, saveSlot, result.state);
+      await saveGame(adventure.meta.id, saveSlot, result.state);
     } catch (err) {
       // Turn rolled back: state is unchanged. Log full provider detail
       // (statusCode, responseBody, cause) to disk; show a concise line here.

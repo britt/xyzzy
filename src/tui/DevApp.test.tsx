@@ -2,7 +2,7 @@ import { EventEmitter } from "node:events";
 import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { render } from "ink-testing-library";
 import { render as inkRender } from "ink";
 import { DevApp } from "./DevApp.js";
@@ -419,6 +419,17 @@ describe("DevApp editing", () => {
 });
 
 describe("DevApp play-focus mode", () => {
+  // Saves are keyed by adventure.meta.id under $XDG_STATE_HOME, shared by
+  // every test in this suite — isolate each test's saves from the others'.
+  const savedState = process.env.XDG_STATE_HOME;
+  beforeEach(() => {
+    process.env.XDG_STATE_HOME = mkdtempSync(join(tmpdir(), "xyzzy-devapp-state-"));
+  });
+  afterEach(() => {
+    if (savedState === undefined) delete process.env.XDG_STATE_HOME;
+    else process.env.XDG_STATE_HOME = savedState;
+  });
+
   it("p opens the New Game / Resume submenu", async () => {
     const dir = tmpAdventure();
     const { lastFrame, stdin, unmount } = mountForPlay(dir);
@@ -429,7 +440,7 @@ describe("DevApp play-focus mode", () => {
 
   it("the submenu lists existing saves below New Game", async () => {
     const dir = tmpAdventure();
-    await saveGame(dir, "before-boss", newGameState(adventure, "now"));
+    await saveGame(adventure.meta.id, "before-boss", newGameState(adventure, "now"));
     const { lastFrame, stdin, unmount } = mountForPlay(dir);
     await press(stdin, "p");
     expect(lastFrame()).toContain("New Game");
@@ -450,7 +461,7 @@ describe("DevApp play-focus mode", () => {
   it("resuming a save loads that slot's state into the embedded session", async () => {
     const dir = tmpAdventure();
     const resumed = { ...newGameState(adventure, "now"), turn: 7, location: "hall" };
-    await saveGame(dir, "before-boss", resumed);
+    await saveGame(adventure.meta.id, "before-boss", resumed);
     const { lastFrame, stdin, unmount } = mountForPlay(dir);
     await press(stdin, "p");
     await press(stdin, DOWN); // New Game -> before-boss
@@ -461,7 +472,7 @@ describe("DevApp play-focus mode", () => {
 
   it("submenu Up/Down move between options, clamp at the ends, and ignore other keys", async () => {
     const dir = tmpAdventure();
-    await saveGame(dir, "before-boss", newGameState(adventure, "now"));
+    await saveGame(adventure.meta.id, "before-boss", newGameState(adventure, "now"));
     const { lastFrame, stdin, unmount } = mountForPlay(dir);
     await press(stdin, "p");
 
