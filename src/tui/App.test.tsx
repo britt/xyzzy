@@ -11,6 +11,12 @@ import { FakeDetector, type Detector } from "../llm/Detector.js";
 import type { Adventure } from "../world/schema.js";
 import type { ProviderConfig } from "../config/schema.js";
 import { logPath } from "../util/log.js";
+import {
+  listSessionLogs,
+  readSessionLog,
+  startSessionLog,
+  type SessionLogHandle,
+} from "../llm/sessionLog.js";
 
 const adventure: Adventure = {
   meta: { id: "a", title: "Cave", version: "1" },
@@ -54,6 +60,7 @@ function mount(
     inputActive?: boolean;
     scrollbackMode?: "native" | "bounded";
     scrollbackViewport?: { rows: number; width: number };
+    sessionLog?: SessionLogHandle;
   } = {},
 ) {
   return render(
@@ -70,6 +77,7 @@ function mount(
       inputActive={extra.inputActive}
       scrollbackMode={extra.scrollbackMode}
       scrollbackViewport={extra.scrollbackViewport}
+      sessionLog={extra.sessionLog}
     />,
   );
 }
@@ -778,6 +786,110 @@ describe("scrollback modes", () => {
     await runTurns(stdin, 2);
     await expect.poll(() => lastFrame()).toContain("NARRATION-2");
     expect(lastFrame()).toContain("A cold stone chamber.");
+    unmount();
+  });
+});
+
+describe("session logging", () => {
+  const savedState = process.env.XDG_STATE_HOME;
+  beforeEach(() => {
+    process.env.XDG_STATE_HOME = mkdtempSync(join(tmpdir(), "xyzzy-app-sessionlog-"));
+  });
+  afterEach(() => {
+    if (savedState === undefined) delete process.env.XDG_STATE_HOME;
+    else process.env.XDG_STATE_HOME = savedState;
+  });
+
+  function openLog(): SessionLogHandle {
+    return startSessionLog({
+      adventureId: adventure.meta.id,
+      source: "dev",
+      provider: { kind: "openai-compatible", model: "a" },
+      saveSlot: "autosave",
+      resumedFrom: null,
+    });
+  }
+
+  it("does not touch disk when no sessionLog is supplied", async () => {
+    const model = new FakeNarratorModel([{ narration: "Hi.", actions: [] }]);
+    const { stdin, unmount } = mount(model);
+    await type(stdin, "look");
+    await tick();
+    expect(listSessionLogs(adventure.meta.id)).toEqual([]);
+    unmount();
+  });
+
+  it("appends a turn record after a successful turn when sessionLog is supplied", async () => {
+    const handle = openLog();
+    const model = new FakeNarratorModel([{ narration: "You look around.", actions: [] }]);
+    const { stdin, unmount } = mount(model, undefined, undefined, undefined, undefined, {
+      sessionLog: handle,
+    });
+
+    await type(stdin, "look");
+    await expect.poll(() => readSessionLog(handle.path).length).toBe(2); // header + 1 turn
+
+    const turn = readSessionLog(handle.path)[1] as { narrator: unknown[] };
+    expect(turn).toMatchObject({ type: "turn", turn: 1, input: "look" });
+    expect(turn.narrator).toHaveLength(1);
+    unmount();
+  });
+
+  it("records the detector call alongside the narrator call", async () => {
+    const handle = openLog();
+    const model = new FakeNarratorModel([{ narration: "You head north.", actions: [] }]);
+    const detector = new FakeDetector([
+      {
+        move: "north",
+        advancedBeats: [],
+        advancedCharacterBeats: [],
+        triggeredInteractions: [],
+      },
+    ]);
+    const { stdin, unmount } = mount(model, undefined, undefined, undefined, () => detector, {
+      sessionLog: handle,
+    });
+
+    await type(stdin, "go north");
+    await expect.poll(() => readSessionLog(handle.path).length).toBe(2);
+
+    const turn = readSessionLog(handle.path)[1] as {
+      detector: { ok: boolean }[];
+      narrator: unknown[];
+    };
+    expect(turn.detector).toHaveLength(1);
+    expect(turn.detector[0]!.ok).toBe(true);
+    unmount();
+  });
+
+  it("appends a turn record (with the narrator error) after a failed turn", async () => {
+    const handle = openLog();
+    const failing: NarratorModel = { generate: () => Promise.reject(new Error("boom")) };
+    const { stdin, unmount } = mount(failing, undefined, undefined, undefined, undefined, {
+      sessionLog: handle,
+    });
+
+    await type(stdin, "look");
+    await expect.poll(() => readSessionLog(handle.path).length).toBe(2);
+
+    const turn = readSessionLog(handle.path)[1] as { narrator: { ok: boolean }[] };
+    expect(turn.narrator[0]!.ok).toBe(false);
+    unmount();
+  });
+
+  it("keeps recording across a provider switch made mid-session", async () => {
+    const handle = openLog();
+    const model = new FakeNarratorModel([{ narration: "Onward.", actions: [] }]);
+    const { stdin, unmount } = mount(model, undefined, undefined, undefined, undefined, {
+      sessionLog: handle,
+    });
+
+    await type(stdin, "/model other-model");
+    await type(stdin, "look");
+    await expect.poll(() => readSessionLog(handle.path).length).toBe(2);
+
+    const turn = readSessionLog(handle.path)[1] as { narrator: unknown[] };
+    expect(turn.narrator).toHaveLength(1);
     unmount();
   });
 });

@@ -5,6 +5,7 @@ import type { Adventure, GameState } from "../world/schema.js";
 import type { NarratorModel } from "../llm/NarratorModel.js";
 import type { Detector } from "../llm/Detector.js";
 import type { ProviderConfig } from "../config/schema.js";
+import type { SessionLogHandle } from "../llm/sessionLog.js";
 import { runTurn, type TurnTiming } from "../engine/turnLoop.js";
 import { listSaves, loadGame, saveGame } from "../engine/save.js";
 import { buildMap } from "../engine/asciiMap.js";
@@ -65,6 +66,13 @@ export interface AppProps {
    * terminal — supply this whenever the height is known).
    */
   scrollbackViewport?: { rows: number; width: number };
+  /**
+   * When supplied, every detector/narrator call this session makes is recorded
+   * and appended as one JSONL turn record after each turn (success or failure).
+   * Omitted for standalone `xyzzy play` unless `--log-llm` is passed; always
+   * supplied by `DevApp`.
+   */
+  sessionLog?: SessionLogHandle;
 }
 
 /**
@@ -104,6 +112,25 @@ function buildDetector(
     });
     return undefined;
   }
+}
+
+/**
+ * Decorate a freshly built model/detector so its calls land in the session log.
+ * Applied at every build site, so a mid-session `/model` or `/provider` switch
+ * keeps recording rather than silently going dark.
+ */
+function withSessionLog(
+  model: NarratorModel | null,
+  sessionLog: SessionLogHandle | undefined,
+): NarratorModel | null {
+  return model && sessionLog ? sessionLog.recorder.wrapModel(model) : model;
+}
+
+function withDetectorSessionLog(
+  detector: Detector | undefined,
+  sessionLog: SessionLogHandle | undefined,
+): Detector | undefined {
+  return detector && sessionLog ? sessionLog.recorder.wrapDetector(detector) : detector;
 }
 
 type Line = { key: number; role: "player" | "narrator" | "system"; text: string };
@@ -178,18 +205,19 @@ export function App({
   inputActive = true,
   scrollbackMode = "native",
   scrollbackViewport,
+  sessionLog,
 }: AppProps) {
   const { exit } = useApp();
   const [state, setState] = useState(initialState);
   const [provider, setProvider] = useState(initialProvider);
   const [{ model, modelError }, setModelState] = useState(() => {
     const built = buildModel(makeModel, initialProvider);
-    return { model: built.model, modelError: built.error };
+    return { model: withSessionLog(built.model, sessionLog), modelError: built.error };
   });
   // Built lazily beside the model (same error-tolerance): an unbuildable
   // detector is undefined, and runTurn degrades to legacy movement.
   const [detector, setDetector] = useState(() =>
-    buildDetector(makeDetector, initialProvider),
+    withDetectorSessionLog(buildDetector(makeDetector, initialProvider), sessionLog),
   );
   const [lines, setLines] = useState<Line[]>(() => {
     const room = adventure.entities?.rooms?.find(
@@ -220,8 +248,11 @@ export function App({
   function applyProvider(next: ProviderConfig, okMsg: string) {
     const built = buildModel(makeModel, next);
     setProvider(next);
-    setModelState({ model: built.model, modelError: built.error });
-    setDetector(buildDetector(makeDetector, next));
+    setModelState({
+      model: withSessionLog(built.model, sessionLog),
+      modelError: built.error,
+    });
+    setDetector(withDetectorSessionLog(buildDetector(makeDetector, next), sessionLog));
     push(
       "system",
       built.error
@@ -421,6 +452,7 @@ export function App({
         ...result.timing,
         ok: true,
       });
+      if (sessionLog) sessionLog.appendTurn(sessionLog.recorder.flushTurn(attemptedTurn, value));
       push("narrator", result.narration);
       await saveGame(adventure.meta.id, saveSlot, result.state);
     } catch (err) {
@@ -432,6 +464,9 @@ export function App({
         ok: false,
       });
       log.error(`turn failed: ${value}`, err);
+      // A failed turn is the one most worth inspecting later, so it is recorded
+      // exactly like a successful one.
+      if (sessionLog) sessionLog.appendTurn(sessionLog.recorder.flushTurn(attemptedTurn, value));
       setError(`${userMessage(err)} · details in ${logPath()}`);
     } finally {
       setBusy(false);
