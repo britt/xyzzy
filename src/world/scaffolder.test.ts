@@ -2,7 +2,6 @@ import {
   mkdirSync,
   existsSync,
   readFileSync,
-  statSync,
   writeFileSync,
 } from "node:fs";
 import { mkdtempSync } from "node:fs";
@@ -52,11 +51,11 @@ describe("scaffoldAdventure", () => {
     expect(adventure.premise.length).toBeGreaterThan(0);
   });
 
-  it("creates a saves/ directory", async () => {
+  it("does not create a local saves/ directory (saves are global, under $XDG_STATE_HOME)", async () => {
     const dir = tmpDir();
     await scaffoldAdventure({ dir, title: "Save Test" });
 
-    expect(statSync(join(dir, "saves")).isDirectory()).toBe(true);
+    expect(existsSync(join(dir, "saves"))).toBe(false);
   });
 
   it("writes a README", async () => {

@@ -27,7 +27,7 @@ These scenarios assume **no local LLM server is available**. They cover every CL
 **Success Criteria**:
 - [ ] Step 1 exits 0 and prints `Scaffolded "Verify Adventure" in /tmp/xyzzy-verify-new`
 - [ ] `/tmp/xyzzy-verify-new/adventure.yaml` exists, with `meta.id: xyzzy-verify-new`, `meta.title: Verify Adventure`, and `premise: A premise for verification.`
-- [ ] `/tmp/xyzzy-verify-new/saves/` exists
+- [ ] `/tmp/xyzzy-verify-new/saves/` does **not** exist — saves are global, not part of the scaffold (see Scenario 5)
 - [ ] A README and commented example room/item/character/beat files are present in the scaffold (`rooms/example.yaml`, `items/example.yaml`, `characters/example.yaml`, `beats/example.yaml`)
 - [ ] Step 2 exits 0 and prints `✓ .../adventure.yaml is valid`
 
@@ -88,27 +88,29 @@ These scenarios assume **no local LLM server is available**. They cover every CL
 
 ### Scenario 5: Save/load cycle via the real TUI (`/save`, `/load`, `/load list`, `/quit`)
 
-**Context**: Meta commands are intercepted before any model call (see `src/tui/App.tsx`), so `/save`, `/load`, and `/load list` are fully exercisable without a live model. This must run in a real interactive terminal — Ink requires TTY raw-mode input.
+**Context**: Meta commands are intercepted before any model call (see `src/tui/App.tsx`), so `/save`, `/load`, and `/load list` are fully exercisable without a live model. This must run in a real interactive terminal — Ink requires TTY raw-mode input. Saves are global, keyed by the adventure's `meta.id` (`cave-of-echoes` for this adventure) under `$XDG_STATE_HOME/xyzzy/<id>/saves/`, not inside the adventure directory — so, as with Scenario 4's `XDG_CONFIG_HOME`, this scenario points `XDG_STATE_HOME` at a scratch directory to avoid touching the developer's real save state.
 
 **Steps**:
 1. Copy `examples/cave-of-echoes` to `/tmp/xyzzy-verify-play`.
-2. In a real terminal: `bun run start -- play /tmp/xyzzy-verify-play`
-3. Type `/save` and press Enter.
-4. Type `/save my-slot` and press Enter.
-5. Type `/load list` and press Enter.
-6. Type `/load` (no argument) and press Enter.
-7. Type `/load my-slot` and press Enter.
-8. Type `/quit` and press Enter.
-9. Delete `/tmp/xyzzy-verify-play`.
+2. `export XYZZY_STATE=$(mktemp -d)`
+3. In a real terminal: `XDG_STATE_HOME=$XYZZY_STATE bun run start -- play /tmp/xyzzy-verify-play`
+4. Type `/save` and press Enter.
+5. Type `/save my-slot` and press Enter.
+6. Type `/load list` and press Enter.
+7. Type `/load` (no argument) and press Enter.
+8. Type `/load my-slot` and press Enter.
+9. Type `/quit` and press Enter.
+10. Delete `/tmp/xyzzy-verify-play` and `$XYZZY_STATE`.
 
 **Success Criteria**:
-- [ ] Step 3 prints `Saved to slot "autosave".` and `/tmp/xyzzy-verify-play/saves/autosave.json` exists and is valid JSON matching the game-state schema
-- [ ] Step 4 prints `Saved to slot "my-slot".` and `saves/my-slot.json` exists
-- [ ] Step 5 prints `Known saves:` listing both `autosave` and `my-slot`
-- [ ] Step 6 (bare `/load`) prints the same listing as step 5
-- [ ] Step 7 prints `Loaded slot "my-slot".`
+- [ ] Step 4 prints `Saved to slot "autosave".` and `$XYZZY_STATE/xyzzy/cave-of-echoes/saves/autosave.json` exists and is valid JSON matching the game-state schema
+- [ ] Step 5 prints `Saved to slot "my-slot".` and `$XYZZY_STATE/xyzzy/cave-of-echoes/saves/my-slot.json` exists
+- [ ] Step 6 prints `Known saves:` listing both `autosave` and `my-slot`
+- [ ] Step 7 (bare `/load`) prints the same listing as step 6
+- [ ] Step 8 prints `Loaded slot "my-slot".`
 - [ ] No error banners appear at any point, despite no live model being reachable
-- [ ] Step 8 exits the TUI cleanly back to the shell
+- [ ] Step 9 exits the TUI cleanly back to the shell
+- [ ] The developer's real `~/.local/state/xyzzy` is untouched throughout
 
 **If Blocked**: If no real TTY is available (e.g. a non-interactive sandboxed tool), stop and ask the developer to run this scenario, or note the limitation explicitly in the verification log. Do not substitute `ink-testing-library` and report it as this scenario passing — that's a unit test, not verification.
 
@@ -233,6 +235,6 @@ anything (`export EDITOR="code --wait"`).
 
 - Never use mocks or fakes
 - Test environments must be fully running copies of real systems
-- Scratch directories (`/tmp/xyzzy-verify-*`, temp `XDG_CONFIG_HOME`) are always cleaned up after each scenario, and never point at the developer's real config or the checked-in `examples/` directory
+- Scratch directories (`/tmp/xyzzy-verify-*`, temp `XDG_CONFIG_HOME`/`XDG_STATE_HOME`) are always cleaned up after each scenario, and never point at the developer's real config/state or the checked-in `examples/` directory
 - If any success criterion fails, verification fails
 - Ask developer for help if blocked, don't guess

@@ -84,8 +84,7 @@ function writeReadme(dir: string, title: string, dirName: string): void {
     "- `adventure.yaml` — `meta`, `premise`, and `start`; the only required file.\n" +
     "- `rooms/`, `items/`, `characters/`, `beats/` — optional structure, one " +
     "file per entity or a whole group; see the commented examples in each " +
-    "directory.\n" +
-    "- `saves/` — save slots written by `/save` during play.\n";
+    "directory.\n";
   writeFileSync(join(dir, "README.md"), readme, "utf8");
 }
 
@@ -147,9 +146,11 @@ const BEAT_EXAMPLE =
   "#       value: true\n";
 
 /**
- * Write a minimal valid adventure: `adventure.yaml`, a `saves/` dir, a README,
- * and commented example room/item/character/beat files. Refuses to overwrite
- * an existing non-empty directory.
+ * Write a minimal valid adventure: `adventure.yaml`, a README, and commented
+ * example room/item/character/beat files. Refuses to overwrite an existing
+ * non-empty directory. Saves live outside the adventure, under
+ * `$XDG_STATE_HOME/xyzzy/<adventure id>/saves` (see `engine/save.ts`), so
+ * scaffolding creates no `saves/` directory here.
  */
 export async function scaffoldAdventure(opts: ScaffoldOptions): Promise<void> {
   const dir = resolve(opts.dir);
@@ -162,7 +163,6 @@ export async function scaffoldAdventure(opts: ScaffoldOptions): Promise<void> {
 
   writeAdventureYaml(dir, id, opts.title, premise);
   writeReadme(dir, opts.title, dirName);
-  mkdirSync(join(dir, "saves"), { recursive: true });
   writeExample(dir, "rooms", ROOM_EXAMPLE);
   writeExample(dir, "items", ITEM_EXAMPLE);
   writeExample(dir, "characters", CHARACTER_EXAMPLE);

@@ -432,3 +432,54 @@
   editors (vim/nano, and the `vi` fallback) may misbehave. GUI editors are
   unaffected. Deferred rather than shipped unverified — it needs a TTY to
   validate and involves Ink's `setRawMode` refcounting.
+
+## Move saves to `$XDG_STATE_HOME/xyzzy/<adventure id>/saves/` - COMPLETE
+
+- Started: 2026-07-28
+- Goal: saves were `<adventureDir>/saves/`, tied to wherever the adventure
+  happened to live. Moved them to a global, XDG-standard location keyed by
+  the adventure's `meta.id`, mirroring `util/log.ts`'s existing
+  `XDG_STATE_HOME` pattern, so saves survive moving/reinstalling the
+  adventure directory itself.
+- `engine/save.ts`: `savesDir`/`savePath`/`saveExists`/`listSaves`/
+  `saveGame`/`loadGame` now take an adventure id instead of a directory,
+  resolving to `$XDG_STATE_HOME/xyzzy/<slugified id>/saves` (default
+  `~/.local/state/xyzzy/<id>/saves`). The id is run through the existing
+  `util/slug.ts` `slugify` before use — `meta.id` is unrestricted,
+  untrusted `adventure.yaml` content, and building a path with it directly
+  would let a crafted id like `../../etc` escape the saves tree. Tests
+  cover the round trip, corrupt/missing/schema-invalid saves, the global
+  path shape, the XDG fallback, and the traversal-sanitization case.
+- `tui/App.tsx`: dropped the `adventureDir` prop (it was only ever used to
+  build save paths); `/save`, `/load`, and the post-turn autosave now key
+  off `adventure.meta.id`, which was already available via the `adventure`
+  prop. Backfilled a `/save` test — it turned out the slash command itself
+  had no test even before this change (only `/load` did), and since I
+  edited that exact line I added coverage for it rather than leave a
+  touched-but-unverified path.
+- `tui/DevApp.tsx`: its `listSaves`/`loadGame` calls (for the `p` play/
+  resume submenu) switched to `adventure.meta.id`; stopped passing the
+  now-removed `adventureDir` prop to the embedded `App`.
+- `cli/commands/play.ts`: `saveExists`/`loadGame` switched to
+  `adventure.meta.id`; stopped passing `adventureDir` to `App`. No
+  dedicated test file for `play.ts` (pre-existing convention, like
+  `index.ts`/`dev.ts`) — covered by VERIFICATION_PLAN Scenario 5.
+- `world/scaffolder.ts`: no longer creates a `saves/` dir or mentions it in
+  the scaffolded README, since saves are no longer part of the adventure
+  directory. `scaffolder.test.ts`'s "creates a saves/ directory" test was
+  flipped to assert the opposite (RED against the unchanged scaffolder,
+  then GREEN after removing the `mkdirSync`).
+- Docs: `README.md` (scaffold description, new saves-path note under
+  `/save`/`/load`) and `VERIFICATION_PLAN.md` (Scenario 1 no longer expects
+  a local `saves/` dir; Scenario 5 scopes `XDG_STATE_HOME` to a scratch dir,
+  mirroring how Scenario 4 already scopes `XDG_CONFIG_HOME`, and checks
+  saves under the new global path).
+- Tests: 456 passing, 0 failing (up from 455 — one test file rewritten,
+  one new `/save` test added).
+- Coverage: Stmts 92.25%, Branch 89.17%, Funcs 95.72%, Lines 92.25%
+  (aggregate; `vitest.config.ts` has no per-file thresholds configured).
+  `engine/save.ts` itself is 100% covered on all four metrics.
+- Build: ✅ Successful (`bun run build`, zero errors).
+- Linting: ✅ Clean (`eslint .`, zero errors/warnings).
+- Typecheck: ✅ Clean (`tsc --noEmit`).
+- Completed: 2026-07-28
