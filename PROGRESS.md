@@ -483,3 +483,29 @@
 - Linting: ✅ Clean (`eslint .`, zero errors/warnings).
 - Typecheck: ✅ Clean (`tsc --noEmit`).
 - Completed: 2026-07-28
+
+## Fix: empty-slug save collision - COMPLETE
+
+- Started: 2026-07-28
+- Goal: code review of the above flagged that `slugify(adventureId)` can
+  return `""` for an id made entirely of characters the slug regex strips
+  (e.g. `"..."` or `"!!!"`). `path.join` silently drops that empty segment,
+  so `savesDir` collapsed to the shared `xyzzy/saves` bucket instead of a
+  per-adventure path — any two adventures whose ids both reduced to empty
+  would silently overwrite each other's saves, undermining the isolation
+  the `slugify` call exists to provide.
+- `engine/save.test.ts`: RED — added
+  `"keeps ids that slugify to an empty string distinct from each other"`,
+  asserting `savePath("...", "autosave")` and `savePath("!!!", "autosave")`
+  resolve to different, traversal-free paths. Confirmed it failed
+  (`Object.is` equality) against the unfixed `savesDir`.
+- `engine/save.ts`: GREEN — `savesDir` now falls back to a hex encoding of
+  the raw id (`Buffer.from(adventureId, "utf8").toString("hex")`) whenever
+  `slugify` returns an empty string, preserving per-adventure uniqueness
+  while keeping the path traversal-free.
+- Tests: 457 passing, 0 failing (up from 456 — one new test added).
+- Coverage: `engine/save.ts` remains 100% on all four metrics; aggregate
+  unchanged at 92.26%/89.18%/95.72%/92.26%.
+- Build: ✅ Successful (`bun run build`, zero errors).
+- Linting: ✅ Clean (`eslint .`, zero errors/warnings).
+- Completed: 2026-07-28

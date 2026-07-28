@@ -20,11 +20,16 @@ export class SaveLoadError extends Error {
  * The id is slugified since it comes from adventure.yaml (untrusted content
  * for a downloaded adventure) and is otherwise unrestricted by the schema —
  * without this a crafted `meta.id` like `../../etc` could escape the saves
- * tree.
+ * tree. An id made entirely of characters `slugify` strips (e.g. `"..."`)
+ * would otherwise collapse to an empty segment and collide with every other
+ * such id in one shared directory, so that case falls back to a hex
+ * encoding of the raw id instead.
  */
 function savesDir(adventureId: string): string {
   const base = process.env.XDG_STATE_HOME ?? join(homedir(), ".local", "state");
-  return join(base, "xyzzy", slugify(adventureId), "saves");
+  const slug =
+    slugify(adventureId) || Buffer.from(adventureId, "utf8").toString("hex");
+  return join(base, "xyzzy", slug, "saves");
 }
 
 export function savePath(adventureId: string, slot: string): string {

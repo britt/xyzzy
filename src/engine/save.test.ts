@@ -94,4 +94,14 @@ describe("global save location", () => {
     );
     expect(path).not.toContain("..");
   });
+
+  it("keeps ids that slugify to an empty string distinct from each other", () => {
+    // "..." and "!!!" both strip to "" under slugify — without a fallback
+    // they'd collapse to the same shared saves/ directory.
+    const dotsPath = savePath("...", "autosave");
+    const bangsPath = savePath("!!!", "autosave");
+    expect(dotsPath).not.toBe(bangsPath);
+    expect(dotsPath).not.toContain("..");
+    expect(bangsPath).not.toContain("..");
+  });
 });
