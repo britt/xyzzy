@@ -8,11 +8,14 @@ import { resolveProvider } from "../../config/resolve.js";
 import { readGlobalConfig } from "../../config/store.js";
 import { createDetector, createModel, listModels } from "../../llm/registry.js";
 import { log } from "../../util/log.js";
+import { startSessionLog } from "../../llm/sessionLog.js";
 import { dirname } from "node:path";
 
 export interface PlayOptions {
   save?: string;
   provider?: string;
+  /** record every detector/narrator call to a session log file */
+  logLlm?: boolean;
 }
 
 const DEFAULT_SLOT = "autosave";
@@ -32,10 +35,28 @@ export async function play(path: string, opts: PlayOptions): Promise<void> {
   const providers = (await readGlobalConfig()).providers;
 
   const slot = opts.save ?? DEFAULT_SLOT;
+  const resumedFrom =
+    opts.save && saveExists(adventure.meta.id, slot) ? slot : null;
   const state =
-    opts.save && saveExists(adventure.meta.id, slot)
-      ? await loadGame(adventure.meta.id, slot)
+    resumedFrom !== null
+      ? await loadGame(adventure.meta.id, resumedFrom)
       : newGameState(adventure, new Date().toISOString());
+
+  // Opt-in for `play`: recording is a debugging aid, not something a player
+  // should pay for by default. `dev` always records.
+  const sessionLog = opts.logLlm
+    ? startSessionLog({
+        adventureId: adventure.meta.id,
+        source: "play",
+        provider: {
+          kind: provider.kind,
+          baseURL: provider.baseURL,
+          model: provider.model,
+        },
+        saveSlot: slot,
+        resumedFrom,
+      })
+    : undefined;
 
   log.info("play started", {
     adventure: adventure.meta.id,
@@ -55,6 +76,7 @@ export async function play(path: string, opts: PlayOptions): Promise<void> {
       listModels,
       providers,
       saveSlot: slot,
+      sessionLog,
     }),
   );
   await waitUntilExit();
