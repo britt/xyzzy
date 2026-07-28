@@ -231,6 +231,62 @@ anything (`export EDITOR="code --wait"`).
 
 **If Blocked**: If no real TTY is available, stop and ask the developer to run this scenario, or note the limitation explicitly in the verification log — same as Scenarios 5 and 8. Do not substitute `ink-testing-library` and report it as this scenario passing; `DevApp.test.tsx` already covers that ground as a unit test, not verification.
 
+### Scenario 10: LLM debugging view (`xyzzy dev`'s "LLM Logs" category)
+
+**Context**: `xyzzy dev` always records detector/narrator calls for its
+embedded play sessions. A turn attempted with no reachable model still
+produces a logged (failed) narrator call — the error is precisely what makes
+this view useful — so this is verifiable without a live LLM, the same
+constraint every other scenario here works under. Note that a live play session
+keeps the content pane for *every* category, logs included (so browsing away
+never tears down a running game), which is why step 6 quits the session before
+reading its log rather than just pressing `Escape`.
+
+**Steps**:
+1. Copy `examples/cave-of-echoes` to `/tmp/xyzzy-verify-logs`.
+2. `export XYZZY_STATE=$(mktemp -d)`
+3. In a real terminal: `XDG_STATE_HOME=$XYZZY_STATE bun run start -- dev /tmp/xyzzy-verify-logs`
+4. Press `p`, then Enter to start a New Game.
+5. Type a command (e.g. `look`) and press Enter; with no reachable model this fails — confirm the usual error banner appears (unchanged behavior).
+6. Type `/quit` and press Enter to end the play session and return to browsing.
+7. Press `Tab` until the "LLM Logs" category is selected.
+8. Confirm exactly one session log entry appears, labeled with a timestamp and `dev`.
+9. Confirm the content pane shows: the session header (source `dev`, save slot `autosave`, resumed from `(new game)`), a "Turn 1" block with the typed input, and a narrator call entry marked `failed` carrying the error detail.
+10. Confirm `e` does nothing while this category is selected, and the hotkey footer does not list `Edit`.
+11. Press `q` to exit the tool.
+12. `rm -rf /tmp/xyzzy-verify-logs "$XYZZY_STATE"`
+
+**Success Criteria**:
+- [ ] Step 8 shows exactly one log entry, and `$XYZZY_STATE/xyzzy/cave-of-echoes/logs/` holds exactly one `.jsonl` file whose first line is a `"type":"session"` header
+- [ ] Step 9's content pane shows the header fields, the turn's input, and the failed narrator call's error detail
+- [ ] Step 10: no `Edit` hotkey, `e` is inert
+- [ ] No crash or unhandled exception at any point despite no reachable model
+- [ ] The developer's real `~/.local/state/xyzzy` is untouched throughout
+
+**If Blocked**: If no real TTY is available, stop and ask the developer to run this scenario, or note the limitation explicitly — same as Scenarios 5, 8, and 9.
+
+### Scenario 11: `xyzzy play --log-llm` opt-in recording
+
+**Context**: Unlike `dev`, `play` records nothing unless asked. This is the
+only scenario covering that opt-in, and it needs no interaction beyond quitting.
+
+**Steps**:
+1. `export XYZZY_STATE=$(mktemp -d)` and `export XYZZY_STATE2=$(mktemp -d)`
+2. `bun run start -- play --help`
+3. In a real terminal: `XDG_STATE_HOME=$XYZZY_STATE bun run start -- play examples/cave-of-echoes --log-llm`, then type `/quit` immediately.
+4. `find "$XYZZY_STATE"/xyzzy -name '*.jsonl'` and print the file.
+5. In a real terminal: `XDG_STATE_HOME=$XYZZY_STATE2 bun run start -- play examples/cave-of-echoes`, then type `/quit` immediately.
+6. `find "$XYZZY_STATE2"/xyzzy -type d -name logs`
+7. `rm -rf "$XYZZY_STATE" "$XYZZY_STATE2"`
+
+**Success Criteria**:
+- [ ] Step 2's help text lists `--log-llm`
+- [ ] Step 4 finds exactly one `.jsonl` file, holding a single `"type":"session"` header line and no `turn` lines (no turns were attempted), with `"source":"play"`
+- [ ] Step 6 finds nothing — without the flag no `logs/` directory is created at all
+- [ ] The developer's real `~/.local/state/xyzzy` is untouched throughout
+
+**If Blocked**: If no real TTY is available, note the limitation — same as Scenarios 5, 8, 9, and 10.
+
 ## Verification Rules
 
 - Never use mocks or fakes

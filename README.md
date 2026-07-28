@@ -132,7 +132,10 @@ Saves are global, not part of the adventure directory — they live under
 `meta.id`, so they survive moving or reinstalling the adventure itself.
 
 Options: `--save <slot>` to resume a specific save, `--provider <name>` to
-choose an LLM provider for the session.
+choose an LLM provider for the session, and `--log-llm` to record every
+detector/narrator LLM call this session makes to a session log file (see
+[LLM Logs](#llm-logs) below). Recording is off by default here — it's a
+debugging aid, and `xyzzy dev` always does it.
 
 ### Develop
 
@@ -141,10 +144,10 @@ xyzzy dev my-adventure
 ```
 
 Opens a two-pane workbench over the whole adventure: a category sidebar on the
-left (Adventure Config, Beats, Characters, Rooms, Items) and a content pane on
-the right showing the selected entry's fields as labelled rows — not raw YAML.
-Unset optional fields appear dimmed with the same placeholder text `xyzzy new`
-would write.
+left (Adventure Config, Beats, Characters, Rooms, Items, LLM Logs) and a
+content pane on the right showing the selected entry's fields as labelled rows
+— not raw YAML. Unset optional fields appear dimmed with the same placeholder
+text `xyzzy new` would write.
 
 | Key                | Action                                              |
 | ------------------ | --------------------------------------------------- |
@@ -178,6 +181,30 @@ browse or edit mid-playthrough; `p` re-focuses the running session with its
 scrollback intact. `/quit` inside the play pane ends just that session and
 returns to browsing. Note that `q` only quits the tool when the sidebar has
 focus — while you're playing it's just the letter "q".
+
+#### LLM Logs
+
+The last sidebar category, **LLM Logs**, lists every recorded session for this
+adventure, newest first, labelled with when it started and what launched it
+(`dev` or `play`). Selecting one shows, through the same labelled-row rendering
+every other category uses: the session header (start time, provider, save slot,
+whether it resumed a save), then each turn in order — the player's input, the
+detector call's context and detection, and the narrator call's system prompt,
+digest, narration and actions, each with its duration. A call that *failed*
+records its error in place of a result, which is usually the reason you came
+looking.
+
+The category is read-only: `e` does nothing there and never appears in the
+footer. Logs also never carry the `⚠` glyph, since they aren't part of
+validation. A log that can't be parsed reports the problem inline, naming the
+bad line, the same way a broken YAML file does.
+
+`xyzzy dev` records every play-test session it starts. A live session keeps the
+content pane, so browse to LLM Logs after `/quit`-ing it to read its own log;
+the sidebar lists it as soon as it starts either way. Logs sit beside saves
+under `$XDG_STATE_HOME/xyzzy/<adventure id>/logs/<session>.jsonl` (default
+`~/.local/state/xyzzy/...`), one JSON-lines file per session — so they're
+greppable outside the tool, and deleting them is just `rm`.
 
 Options: `--provider <name>` to choose the LLM provider used for play-testing.
 Browsing and editing need no model at all.
