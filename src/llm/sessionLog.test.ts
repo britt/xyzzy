@@ -1,7 +1,10 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { existsSync, mkdtempSync, readFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { FakeNarratorModel } from "./NarratorModel.js";
 import { FakeDetector } from "./Detector.js";
-import { SessionRecorder, sessionLogPath } from "./sessionLog.js";
+import { SessionRecorder, sessionLogPath, startSessionLog } from "./sessionLog.js";
 
 describe("sessionLogPath", () => {
   const savedState = process.env.XDG_STATE_HOME;
@@ -129,5 +132,101 @@ describe("SessionRecorder", () => {
 
     const second = recorder.flushTurn(2, "look again");
     expect(second.narrator).toEqual([]);
+  });
+});
+
+/** Point the XDG state dir at a scratch directory for the duration of a block. */
+function isolateStateHome(prefix: string) {
+  const savedState = process.env.XDG_STATE_HOME;
+  beforeEach(() => {
+    process.env.XDG_STATE_HOME = mkdtempSync(join(tmpdir(), prefix));
+  });
+  afterEach(() => {
+    if (savedState === undefined) delete process.env.XDG_STATE_HOME;
+    else process.env.XDG_STATE_HOME = savedState;
+  });
+}
+
+function lines(path: string): unknown[] {
+  return readFileSync(path, "utf8")
+    .trim()
+    .split("\n")
+    .map((l) => JSON.parse(l));
+}
+
+describe("startSessionLog", () => {
+  isolateStateHome("xyzzy-sessionlog-");
+
+  it("writes a session header line immediately, before any turn", () => {
+    const handle = startSessionLog({
+      adventureId: "cave",
+      source: "dev",
+      provider: {
+        kind: "openai-compatible",
+        baseURL: "http://localhost:11434/v1",
+        model: "llama3.1",
+      },
+      saveSlot: "autosave",
+      resumedFrom: null,
+      clock: () => "2026-07-28T14:32:07.000Z",
+    });
+
+    expect(existsSync(handle.path)).toBe(true);
+    expect(lines(handle.path)).toEqual([
+      {
+        type: "session",
+        startedAt: "2026-07-28T14:32:07.000Z",
+        adventure: "cave",
+        source: "dev",
+        provider: {
+          kind: "openai-compatible",
+          baseURL: "http://localhost:11434/v1",
+          model: "llama3.1",
+        },
+        saveSlot: "autosave",
+        resumedFrom: null,
+      },
+    ]);
+  });
+
+  it("appendTurn appends one JSON line per call", () => {
+    const handle = startSessionLog({
+      adventureId: "cave",
+      source: "play",
+      provider: { kind: "openai-compatible", model: "llama3.1" },
+      saveSlot: "autosave",
+      resumedFrom: "before-boss",
+      clock: () => "2026-07-28T14:32:07.000Z",
+    });
+    handle.appendTurn(handle.recorder.flushTurn(1, "look"));
+    handle.appendTurn(handle.recorder.flushTurn(2, "go north"));
+
+    const all = lines(handle.path);
+    expect(all).toHaveLength(3); // header + 2 turns
+    expect(all[1]).toMatchObject({ type: "turn", turn: 1, input: "look" });
+    expect(all[2]).toMatchObject({ type: "turn", turn: 2, input: "go north" });
+  });
+
+  it("sanitizes the clock timestamp into a filesystem-safe session id", () => {
+    const handle = startSessionLog({
+      adventureId: "cave",
+      source: "dev",
+      provider: { kind: "openai-compatible", model: "llama3.1" },
+      saveSlot: "autosave",
+      resumedFrom: null,
+      clock: () => "2026-07-28T14:32:07.123Z",
+    });
+    expect(handle.path.endsWith("2026-07-28T14-32-07-123Z.jsonl")).toBe(true);
+  });
+
+  it("defaults to the real clock when none is injected", () => {
+    const handle = startSessionLog({
+      adventureId: "cave",
+      source: "dev",
+      provider: { kind: "openai-compatible", model: "llama3.1" },
+      saveSlot: "autosave",
+      resumedFrom: null,
+    });
+    expect(existsSync(handle.path)).toBe(true);
   });
 });

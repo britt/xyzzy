@@ -1,3 +1,4 @@
+import { appendFileSync, mkdirSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { slugify } from "../util/slug.js";
@@ -145,4 +146,72 @@ export class SessionRecorder {
     this.pendingNarrator = [];
     return record;
   }
+}
+
+export interface SessionLogHandle {
+  path: string;
+  recorder: SessionRecorder;
+  appendTurn(record: TurnRecord<DetectorCallLog, NarratorCallLog>): void;
+}
+
+export interface StartSessionLogOptions {
+  adventureId: string;
+  source: SessionSource;
+  provider: { kind: string; baseURL?: string; model: string };
+  saveSlot: string;
+  resumedFrom: string | null;
+  /** injectable for deterministic tests; defaults to the real clock. */
+  clock?: () => string;
+}
+
+/** `:` and `.` are legal in a session id but hostile in a filename. */
+function sanitizeForFilename(iso: string): string {
+  return iso.replace(/[:.]/g, "-");
+}
+
+/**
+ * Append one record as a JSON line. Best-effort: a disk failure here must
+ * never break gameplay, matching `util/log.ts`'s `emit`.
+ */
+function appendRecord(dir: string, path: string, record: SessionLogRecord): void {
+  try {
+    mkdirSync(dir, { recursive: true });
+    appendFileSync(path, `${JSON.stringify(record)}\n`);
+  } catch {
+    // Never let logging break the app.
+  }
+}
+
+/**
+ * Open a session log, writing its header line straight away so the session is
+ * discoverable (and labelled) even if it ends before a single turn completes.
+ *
+ * The session id is the start timestamp, so two sessions started in the same
+ * millisecond would share a file. A session start is a deliberate user action,
+ * so that is not worth complicating the naming for today — append a random
+ * suffix here if it ever bites.
+ */
+export function startSessionLog(opts: StartSessionLogOptions): SessionLogHandle {
+  const recorder = new SessionRecorder();
+  const startedAt = (opts.clock ?? (() => new Date().toISOString()))();
+  const sessionId = sanitizeForFilename(startedAt);
+  const dir = sessionLogDir(opts.adventureId);
+  const path = sessionLogPath(opts.adventureId, sessionId);
+
+  const header: SessionHeader = {
+    type: "session",
+    startedAt,
+    adventure: opts.adventureId,
+    source: opts.source,
+    provider: opts.provider,
+    saveSlot: opts.saveSlot,
+    resumedFrom: opts.resumedFrom,
+  };
+  appendRecord(dir, path, header);
+
+  return {
+    path,
+    recorder,
+    appendTurn: (record) => appendRecord(dir, path, record),
+  };
 }
