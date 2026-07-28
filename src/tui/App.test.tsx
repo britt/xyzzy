@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { render } from "ink-testing-library";
 import { App, formatDuration, formatTimingLine } from "./App.js";
 import { newGameState } from "../engine/state.js";
-import { saveGame } from "../engine/save.js";
+import { saveExists, saveGame } from "../engine/save.js";
 import { FakeNarratorModel, type NarratorModel } from "../llm/NarratorModel.js";
 import { FakeDetector, type Detector } from "../llm/Detector.js";
 import type { Adventure } from "../world/schema.js";
@@ -352,6 +352,19 @@ describe("App", () => {
       .poll(() => lastFrame())
       .toContain("Endpoint set to http://box:8080/v1");
     expect(requested[0]?.baseURL).toBe("http://box:8080/v1");
+    unmount();
+  });
+
+  it("/save writes to the default slot, then /save <name> writes a named slot", async () => {
+    const { lastFrame, stdin, unmount } = mount(new FakeNarratorModel());
+
+    await type(stdin, "/save");
+    await expect.poll(() => lastFrame()).toContain('Saved to slot "autosave".');
+    expect(saveExists(adventure.meta.id, "autosave")).toBe(true);
+
+    await type(stdin, "/save my-slot");
+    await expect.poll(() => lastFrame()).toContain('Saved to slot "my-slot".');
+    expect(saveExists(adventure.meta.id, "my-slot")).toBe(true);
     unmount();
   });
 
