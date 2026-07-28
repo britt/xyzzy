@@ -6,6 +6,7 @@ const sidebar: HotKeyContext = {
   submenuOpen: false,
   entryCount: 0,
   isConfigCategory: true,
+  isLogsCategory: false,
   hasLiveSession: false,
   canPlay: true,
 };
@@ -91,5 +92,27 @@ describe("hotKeysFor content scrolling", () => {
     expect(
       keys({ ...sidebar, focus: "play", canScrollContent: true }),
     ).not.toContain("PgUp/PgDn");
+  });
+});
+
+describe("hotKeysFor logs category", () => {
+  const logs: HotKeyContext = {
+    ...sidebar,
+    entryCount: 3,
+    isConfigCategory: false,
+    isLogsCategory: true,
+    canPlay: false,
+  };
+
+  it("omits the Edit key for the logs category, even with entries selected", () => {
+    expect(keys(logs)).not.toContain("e");
+  });
+
+  it("still offers Entity navigation for the logs category", () => {
+    expect(keys(logs)).toContain("↑↓");
+  });
+
+  it("omits Edit for an empty logs category too", () => {
+    expect(keys({ ...logs, entryCount: 0 })).not.toContain("e");
   });
 });

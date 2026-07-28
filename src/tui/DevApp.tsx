@@ -441,6 +441,7 @@ export function DevApp({
     submenuOpen,
     entryCount: entries.length,
     isConfigCategory: category === "config",
+    isLogsCategory: category === "logs",
     hasLiveSession: playState !== null,
     canPlay,
     canScrollContent,

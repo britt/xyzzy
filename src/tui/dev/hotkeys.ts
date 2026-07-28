@@ -21,6 +21,8 @@ export interface HotKeyContext {
   entryCount: number;
   /** The config category has no entity list, but is always editable. */
   isConfigCategory: boolean;
+  /** Logs are read-only — Edit is never offered regardless of entryCount. */
+  isLogsCategory: boolean;
   hasLiveSession: boolean;
   /** Whether a provider and model factory are available to start a session. */
   canPlay: boolean;
@@ -34,6 +36,7 @@ export function hotKeysFor(context: HotKeyContext): HotKey[] {
     submenuOpen,
     entryCount,
     isConfigCategory,
+    isLogsCategory,
     hasLiveSession,
     canPlay,
     canScrollContent = false,
@@ -61,7 +64,8 @@ export function hotKeysFor(context: HotKeyContext): HotKey[] {
     keys.push({ key: "PgUp/PgDn", label: "Scroll" });
   }
   // Editing needs a selection; the config category always has one implicitly.
-  if (isConfigCategory || entryCount > 0) {
+  // Logs are read-only, so `e` is never offered there however many exist.
+  if (!isLogsCategory && (isConfigCategory || entryCount > 0)) {
     keys.push({ key: "e", label: "Edit" });
   }
   if (canPlay) {
