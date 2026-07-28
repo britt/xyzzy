@@ -7,6 +7,7 @@ import { FakeDetector } from "./Detector.js";
 import {
   SessionRecorder,
   listSessionLogs,
+  readSessionLog,
   sessionLogPath,
   startSessionLog,
 } from "./sessionLog.js";
@@ -289,5 +290,39 @@ describe("listSessionLogs", () => {
         source: "unknown",
       },
     ]);
+  });
+});
+
+describe("readSessionLog", () => {
+  isolateStateHome("xyzzy-sessionlog-read-");
+
+  it("parses every line of a well-formed session log", () => {
+    const handle = startSessionLog({
+      adventureId: "cave",
+      source: "dev",
+      provider: { kind: "openai-compatible", model: "a" },
+      saveSlot: "autosave",
+      resumedFrom: null,
+      clock: () => "2026-07-28T14-32-07.000Z",
+    });
+    handle.appendTurn(handle.recorder.flushTurn(1, "look"));
+
+    const records = readSessionLog(handle.path);
+    expect(records).toHaveLength(2);
+    expect(records[0]).toMatchObject({ type: "session" });
+    expect(records[1]).toMatchObject({ type: "turn", turn: 1 });
+  });
+
+  it("throws a clear error for a missing file", () => {
+    expect(() => readSessionLog("/tmp/does-not-exist.jsonl")).toThrow(
+      /No such session log/,
+    );
+  });
+
+  it("throws a clear error naming the bad line for corrupt JSON", () => {
+    const dir = mkdtempSync(join(tmpdir(), "xyzzy-sessionlog-corrupt-"));
+    const path = join(dir, "bad.jsonl");
+    writeFileSync(path, '{"type":"session"}\nnot json\n');
+    expect(() => readSessionLog(path)).toThrow(/line 2/);
   });
 });

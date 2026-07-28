@@ -258,3 +258,31 @@ export function listSessionLogs(adventureId: string): SessionLogListing[] {
       }
     });
 }
+
+/**
+ * Parse a whole session log for the content pane.
+ *
+ * Unlike {@link listSessionLogs}, this is strict: a missing or corrupt file
+ * throws a message naming the problem, so `DevApp` can show it in the same
+ * inline error banner it already uses for a bad YAML file, rather than
+ * rendering a silently-truncated log as if it were complete.
+ */
+export function readSessionLog(path: string): SessionLogRecord[] {
+  let text: string;
+  try {
+    text = readFileSync(path, "utf8");
+  } catch {
+    throw new Error(`No such session log: ${path}`);
+  }
+
+  return text
+    .split("\n")
+    .filter((line) => line.trim() !== "")
+    .map((line, i) => {
+      try {
+        return JSON.parse(line) as SessionLogRecord;
+      } catch {
+        throw new Error(`Session log is corrupt at line ${i + 1}: ${path}`);
+      }
+    });
+}
