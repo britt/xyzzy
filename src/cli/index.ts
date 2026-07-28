@@ -1,8 +1,10 @@
 #!/usr/bin/env node
+import { readFileSync } from "node:fs";
 import { Command } from "commander";
 import { log } from "../util/log.js";
 import { isMainModule } from "./isMainModule.js";
 import { safeRealpath } from "./safeRealpath.js";
+import { resolvePackageJsonPath } from "./resolvePackageJsonPath.js";
 import { play } from "./commands/play.js";
 import { dev } from "./commands/dev.js";
 import { newAdventure } from "./commands/new.js";
@@ -24,10 +26,14 @@ import {
 export function buildProgram(): Command {
   const program = new Command();
 
+  const pkg = JSON.parse(
+    readFileSync(resolvePackageJsonPath(import.meta.url), "utf8"),
+  ) as { version: string };
+
   program
     .name("xyzzy")
     .description("Build and play text adventures with local LLMs.")
-    .version("0.0.0");
+    .version(pkg.version);
 
   program
     .command("play")

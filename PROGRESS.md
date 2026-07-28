@@ -509,3 +509,35 @@
 - Build: ✅ Successful (`bun run build`, zero errors).
 - Linting: ✅ Clean (`eslint .`, zero errors/warnings).
 - Completed: 2026-07-28
+
+## Fix: `xyzzy --version` always printed `0.0.0` - COMPLETE
+
+- Started: 2026-07-28
+- Goal: `program.version("0.0.0")` in `src/cli/index.ts` was a hardcoded
+  literal instead of reading `package.json`'s real version, so `xyzzy
+  --version` never reflected the published version (currently `0.4.0`).
+- `src/cli/resolvePackageJsonPath.test.ts`: RED — added tests asserting
+  `resolvePackageJsonPath(importMetaUrl)` resolves the package root's
+  `package.json` from both the dev entry point
+  (`file:///real/src/cli/index.ts`) and the built dist entry point
+  (`file:///real/dist/cli/index.js`), plus a path-with-spaces case.
+  Confirmed it failed with a module-not-found error (file didn't exist yet).
+- `src/cli/resolvePackageJsonPath.ts`: GREEN — pure function resolving two
+  directories up from the calling module's own URL, since `--root ./src
+  --outdir ./dist` preserves the same `<kind>/cli/index.*` depth under the
+  package root in both dev and the built/packaged CLI.
+- `src/cli/index.ts`: wired `readFileSync(resolvePackageJsonPath(import.meta.url))`
+  into `program.version(...)`, replacing the `"0.0.0"` literal.
+- Verified manually (per existing convention that `index.ts` glue is
+  excluded from coverage and not unit-tested directly):
+  - `bun run start -- --version` → `0.4.0`
+  - Packaged install per Scenario 6 (`npm pack` + `npm install -g` into a
+    scratch prefix, invoked through the symlinked `bin/xyzzy`) →
+    `./prefix/bin/xyzzy --version` → `0.4.0`, confirming the fix survives
+    the symlink-vs-realpath distinction that scenario exists to catch.
+- Tests: 460 passing, 0 failing (up from 457 — 3 new tests added).
+- Coverage: `src/cli/resolvePackageJsonPath.ts` at 100%/100%/100%/100%;
+  aggregate 92.27%/89.18%/95.74%/92.27% (thresholds met).
+- Build: ✅ Successful (`bun run build`, zero errors).
+- Linting: ✅ Clean (`eslint .`, zero errors/warnings).
+- Completed: 2026-07-28
