@@ -1,10 +1,15 @@
-import { existsSync, mkdtempSync, readFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { FakeNarratorModel } from "./NarratorModel.js";
 import { FakeDetector } from "./Detector.js";
-import { SessionRecorder, sessionLogPath, startSessionLog } from "./sessionLog.js";
+import {
+  SessionRecorder,
+  listSessionLogs,
+  sessionLogPath,
+  startSessionLog,
+} from "./sessionLog.js";
 
 describe("sessionLogPath", () => {
   const savedState = process.env.XDG_STATE_HOME;
@@ -228,5 +233,61 @@ describe("startSessionLog", () => {
       resumedFrom: null,
     });
     expect(existsSync(handle.path)).toBe(true);
+  });
+});
+
+describe("listSessionLogs", () => {
+  isolateStateHome("xyzzy-sessionlog-list-");
+
+  it("returns [] when no logs directory exists yet", () => {
+    expect(listSessionLogs("cave")).toEqual([]);
+  });
+
+  it("lists sessions newest-first, with metadata read from each header line", () => {
+    startSessionLog({
+      adventureId: "cave",
+      source: "dev",
+      provider: { kind: "openai-compatible", model: "a" },
+      saveSlot: "autosave",
+      resumedFrom: null,
+      clock: () => "2026-07-28T10-00-00.000Z",
+    });
+    startSessionLog({
+      adventureId: "cave",
+      source: "play",
+      provider: { kind: "openai-compatible", model: "a" },
+      saveSlot: "autosave",
+      resumedFrom: null,
+      clock: () => "2026-07-28T12-00-00.000Z",
+    });
+
+    const listing = listSessionLogs("cave");
+    expect(listing).toHaveLength(2);
+    expect(listing[0]!.source).toBe("play"); // newer session first
+    expect(listing[1]!.source).toBe("dev");
+    expect(listing[0]!.startedAt).toBe("2026-07-28T12-00-00.000Z");
+  });
+
+  it("ignores files that are not .jsonl", () => {
+    const dir = dirname(sessionLogPath("cave", "x"));
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(join(dir, "notes.txt"), "ignore me\n");
+
+    expect(listSessionLogs("cave")).toEqual([]);
+  });
+
+  it("tolerates a corrupt header line by falling back to the filename", () => {
+    const dir = dirname(sessionLogPath("cave", "x"));
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(join(dir, "broken.jsonl"), "not json\n");
+
+    expect(listSessionLogs("cave")).toEqual([
+      {
+        path: join(dir, "broken.jsonl"),
+        file: "broken.jsonl",
+        startedAt: "broken",
+        source: "unknown",
+      },
+    ]);
   });
 });

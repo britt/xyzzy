@@ -1,4 +1,10 @@
-import { appendFileSync, mkdirSync } from "node:fs";
+import {
+  appendFileSync,
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  readdirSync,
+} from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { slugify } from "../util/slug.js";
@@ -214,4 +220,41 @@ export function startSessionLog(opts: StartSessionLogOptions): SessionLogHandle 
     recorder,
     appendTurn: (record) => appendRecord(dir, path, record),
   };
+}
+
+export interface SessionLogListing {
+  path: string;
+  file: string;
+  startedAt: string;
+  source: SessionSource | "unknown";
+}
+
+/**
+ * The sessions recorded for an adventure, newest first (the session id is a
+ * timestamp, so a lexical sort is a chronological one).
+ *
+ * Deliberately tolerant: this only builds the sidebar's label, so a log whose
+ * header is truncated or corrupt still gets listed — falling back to its
+ * filename — rather than hiding the file or failing the whole listing. Opening
+ * one is the strict path; see {@link readSessionLog}.
+ */
+export function listSessionLogs(adventureId: string): SessionLogListing[] {
+  const dir = sessionLogDir(adventureId);
+  if (!existsSync(dir)) return [];
+
+  return readdirSync(dir)
+    .filter((f) => f.endsWith(".jsonl"))
+    .sort()
+    .reverse()
+    .map((file) => {
+      const path = join(dir, file);
+      const fallback = file.replace(/\.jsonl$/, "");
+      try {
+        const firstLine = readFileSync(path, "utf8").split("\n", 1)[0] ?? "";
+        const header = JSON.parse(firstLine) as SessionHeader;
+        return { path, file, startedAt: header.startedAt, source: header.source };
+      } catch {
+        return { path, file, startedAt: fallback, source: "unknown" as const };
+      }
+    });
 }
