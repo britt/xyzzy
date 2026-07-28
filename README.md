@@ -69,8 +69,8 @@ xyzzy new my-adventure
 Prompts for the game's title (defaults to the directory name, `my-adventure`
 here) and an optional premise (defaults to placeholder text if you skip it),
 then scaffolds a new adventure directory: a minimal valid `adventure.yaml`, a
-`saves/` folder, a README, and commented examples of a room, an item, a
-character, and a story beat so you can see the optional structure.
+README, and commented examples of a room, an item, a character, and a story
+beat so you can see the optional structure.
 
 #### Add entities
 
@@ -125,6 +125,11 @@ bottom. Type commands in plain language. In-game meta commands:
 | `/log`         | Show the log file path.                  |
 | `/help`        | Show meta commands.                      |
 | `/quit`        | Exit.                                    |
+
+Saves are global, not part of the adventure directory — they live under
+`$XDG_STATE_HOME/xyzzy/<adventure id>/saves/` (default
+`~/.local/state/xyzzy/<adventure id>/saves/`), keyed by the adventure's
+`meta.id`, so they survive moving or reinstalling the adventure itself.
 
 Options: `--save <slot>` to resume a specific save, `--provider <name>` to
 choose an LLM provider for the session.
