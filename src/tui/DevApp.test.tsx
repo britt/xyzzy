@@ -1,7 +1,7 @@
 import { EventEmitter } from "node:events";
 import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { render } from "ink-testing-library";
 import { render as inkRender } from "ink";
@@ -12,6 +12,11 @@ import { FakeNarratorModel, type NarratorModel } from "../llm/NarratorModel.js";
 import { saveGame } from "../engine/save.js";
 import { newGameState } from "../engine/state.js";
 import type { ProviderConfig } from "../config/schema.js";
+import {
+  listSessionLogs,
+  sessionLogPath,
+  startSessionLog,
+} from "../llm/sessionLog.js";
 
 /** Real terminal escape sequences — Ink parses these into `key.upArrow` etc. */
 const UP = "\x1b[A";
@@ -1057,5 +1062,140 @@ describe("DevApp sidebar divider", () => {
     expect(frameGeometry(stdout).height).toBe(13);
     expect(frameGeometry(stdout).maxWidth).toBeLessThanOrEqual(74);
     app.unmount();
+  });
+});
+
+describe("DevApp LLM Logs category", () => {
+  // Session logs live under $XDG_STATE_HOME keyed by adventure.meta.id, shared
+  // by every test in this suite — isolate each test's logs from the others'.
+  const savedState = process.env.XDG_STATE_HOME;
+  beforeEach(() => {
+    process.env.XDG_STATE_HOME = mkdtempSync(join(tmpdir(), "xyzzy-devapp-logs-"));
+  });
+  afterEach(() => {
+    if (savedState === undefined) delete process.env.XDG_STATE_HOME;
+    else process.env.XDG_STATE_HOME = savedState;
+  });
+
+  /** Tab from the default Config category round to LLM Logs, the last one. */
+  async function toLogs(stdin: { write: (s: string) => void }) {
+    for (let i = 0; i < CATEGORIES.length - 1; i++) await press(stdin, "\t");
+  }
+
+  function seedLog(startedAt: string) {
+    return startSessionLog({
+      adventureId: adventure.meta.id,
+      source: "dev",
+      provider: { kind: "openai-compatible", model: "a" },
+      saveSlot: "autosave",
+      resumedFrom: null,
+      clock: () => startedAt,
+    });
+  }
+
+  it("shows an empty LLM Logs category when no sessions have run", async () => {
+    const dir = tmpAdventure();
+    const { lastFrame, stdin, unmount } = mountForPlay(dir);
+    await toLogs(stdin);
+    const frame = lastFrame()!;
+    expect(frame).toContain("LLM Logs");
+    // The pane switched to the (empty) logs view rather than staying on Config.
+    expect(frame).not.toContain("Cave of Echoes");
+    unmount();
+  });
+
+  it("lists a session log created by a prior xyzzy dev run", async () => {
+    seedLog("2026-07-28T14-32-07.000Z");
+    const dir = tmpAdventure();
+    const { lastFrame, stdin, unmount } = mountForPlay(dir);
+    await toLogs(stdin);
+    expect(lastFrame()).toContain("2026-07-28T14-32-07.000Z");
+    unmount();
+  });
+
+  it("starting a New Game session creates a log that appears without restarting", async () => {
+    const dir = tmpAdventure();
+    const { lastFrame, stdin, unmount } = mountForPlay(dir);
+    await press(stdin, "p");
+    await press(stdin, "\r"); // New Game
+    await press(stdin, ESC); // back to the sidebar; the session keeps running
+    await toLogs(stdin);
+    expect(listSessionLogs(adventure.meta.id)).toHaveLength(1);
+    expect(lastFrame()).toContain("dev"); // the sidebar row's source label
+    unmount();
+  });
+
+  it("keeps a live play session in the pane while its log is listed in the sidebar", async () => {
+    const dir = tmpAdventure();
+    const { lastFrame, stdin, unmount } = mountForPlay(dir);
+    await press(stdin, "p");
+    await press(stdin, "\r");
+    await press(stdin, ESC);
+    await toLogs(stdin);
+    // A live session owns the content pane for every category, logs included —
+    // browsing away must not tear down the running game.
+    expect(lastFrame()).toContain("A dark cavern.");
+    unmount();
+  });
+
+  it("renders the selected log's content once the session has been quit", async () => {
+    const dir = tmpAdventure();
+    const { lastFrame, stdin, unmount } = mountForPlay(dir);
+    await press(stdin, "p");
+    await press(stdin, "\r");
+    await press(stdin, "/quit");
+    await press(stdin, "\r");
+    await toLogs(stdin);
+    // The session header's fields, rendered through the usual FieldRow pipeline.
+    await expect.poll(() => lastFrame()).toContain("autosave");
+    expect(lastFrame()).toContain("Save slot");
+    unmount();
+  });
+
+  it("shows an inline banner when the selected log cannot be read", async () => {
+    const logDir = dirname(sessionLogPath(adventure.meta.id, "x"));
+    mkdirSync(logDir, { recursive: true });
+    writeFileSync(join(logDir, "broken.jsonl"), '{"type":"session"}\nnot json\n');
+
+    const dir = tmpAdventure();
+    const { lastFrame, stdin, unmount } = mountForPlay(dir);
+    await toLogs(stdin);
+    expect(lastFrame()).toContain("Could not read log");
+    expect(lastFrame()).toContain("line 2");
+    unmount();
+  });
+
+  it("navigates between logs with Up/Down", async () => {
+    seedLog("2026-07-28T10-00-00.000Z");
+    seedLog("2026-07-28T12-00-00.000Z");
+    const dir = tmpAdventure();
+    const { lastFrame, stdin, unmount } = mountForPlay(dir);
+    await toLogs(stdin);
+    // Newest first, so the 12:00 session is selected by default.
+    expect(lastFrame()).toContain("2026-07-28T12-00-00.000Z");
+    await press(stdin, DOWN);
+    await expect.poll(() => lastFrame()).toContain("2026-07-28T10-00-00.000Z");
+    unmount();
+  });
+
+  it("does not offer the Edit hotkey while browsing logs", async () => {
+    const dir = tmpAdventure();
+    const { lastFrame, stdin, unmount } = mountForPlay(dir);
+    await toLogs(stdin);
+    expect(lastFrame()).not.toContain("Edit");
+    unmount();
+  });
+
+  it("pressing e while browsing logs does nothing", async () => {
+    const dir = tmpAdventure();
+    seedLog("2026-07-28T14-32-07.000Z");
+    const opened: string[] = [];
+    const { stdin, unmount } = render(
+      <DevApp adventure={adventure} adventureDir={dir} openEditor={(p) => opened.push(p)} />,
+    );
+    await toLogs(stdin);
+    await press(stdin, "e");
+    expect(opened).toEqual([]);
+    unmount();
   });
 });

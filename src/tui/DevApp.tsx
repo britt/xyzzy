@@ -46,6 +46,14 @@ import {
 } from "./dev/layout.js";
 import { hotKeysFor } from "./dev/hotkeys.js";
 import {
+  listSessionLogs,
+  readSessionLog,
+  startSessionLog,
+  type SessionLogHandle,
+  type SessionLogListing,
+} from "../llm/sessionLog.js";
+import { renderSessionLogFields } from "./dev/renderSessionLog.js";
+import {
   clampScroll,
   layoutFieldRows,
   type DisplayLine,
@@ -174,6 +182,18 @@ const INITIAL_SELECTION: SelectionByCategory = {
   logs: 0,
 };
 
+/** One sidebar row, unifying an entity entry and a session-log listing. */
+interface SidebarRow {
+  key: string;
+  label: string;
+  broken: boolean;
+}
+
+/** e.g. `2026-07-28T14:32:07.000Z · dev` — when it ran and what started it. */
+function logLabel(entry: SessionLogListing): string {
+  return `${entry.startedAt} · ${entry.source}`;
+}
+
 function findEntity(
   adventure: Adventure,
   entry: CatalogEntry,
@@ -222,6 +242,14 @@ export function DevApp({
   const [submenuOpen, setSubmenuOpen] = useState(false);
   const [submenuIndex, setSubmenuIndex] = useState(0);
   const [scroll, setScroll] = useState(0);
+  // Refreshed whenever a session starts, so a log you just played shows up
+  // without restarting the tool.
+  const [logEntries, setLogEntries] = useState<SessionLogListing[]>(() =>
+    listSessionLogs(initialAdventure.meta.id),
+  );
+  const [sessionLogHandle, setSessionLogHandle] = useState<
+    SessionLogHandle | undefined
+  >();
 
   const saves = listSaves(adventure.meta.id);
   const submenuOptions = ["New Game", ...saves];
@@ -230,27 +258,68 @@ export function DevApp({
   const canPlay = Boolean(provider && makeModel && listModels);
 
   async function startPlay(optionIndex: number) {
+    const resumedFrom = optionIndex === 0 ? null : saves[optionIndex - 1]!;
     const state =
-      optionIndex === 0
+      resumedFrom === null
         ? newGameStateFor(adventure)
-        : await loadGame(adventure.meta.id, saves[optionIndex - 1]!);
+        : await loadGame(adventure.meta.id, resumedFrom);
+
+    // Every dev-tool session is recorded — that is the whole point of the tool.
+    // Guarded on `provider` only because the header records it.
+    if (provider) {
+      const handle = startSessionLog({
+        adventureId: adventure.meta.id,
+        source: "dev",
+        provider: {
+          kind: provider.kind,
+          baseURL: provider.baseURL,
+          model: provider.model,
+        },
+        saveSlot,
+        resumedFrom,
+      });
+      setSessionLogHandle(handle);
+      setLogEntries(listSessionLogs(adventure.meta.id));
+    }
     setPlayState(state);
     setSubmenuOpen(false);
     setFocus("play");
   }
 
   const entries = entriesForCategory(adventure, category);
-  const index =
-    entries.length === 0
-      ? 0
-      : Math.min(selection[category], entries.length - 1);
-  const currentEntry = category === "config" ? undefined : entries[index];
+  // Logs are listed separately from `entriesForCategory` (a session file is not
+  // an entity: no id collisions, no editor target, no validation issues), so
+  // every selection bound is expressed against this count rather than `entries`.
+  const entryCount = category === "logs" ? logEntries.length : entries.length;
+  const index = entryCount === 0 ? 0 : Math.min(selection[category], entryCount - 1);
+  const currentEntry =
+    category === "config" || category === "logs" ? undefined : entries[index];
+  const selectedLog = category === "logs" ? logEntries[index] : undefined;
   const currentKey =
     category === "config"
       ? CONFIG_KEY
       : currentEntry
         ? entityKey(currentEntry.kind, currentEntry.id)
         : undefined;
+
+  /**
+   * The selected log's parsed contents. Re-read per render rather than cached:
+   * cheap at any plausible log size, and it means a session still being played
+   * shows its newest turns without any invalidation machinery.
+   */
+  const logContent =
+    selectedLog !== undefined
+      ? (() => {
+          try {
+            return { records: readSessionLog(selectedLog.path), error: null };
+          } catch (err) {
+            return {
+              records: [],
+              error: err instanceof Error ? err.message : String(err),
+            };
+          }
+        })()
+      : { records: [], error: null };
 
   /**
    * Where an entity is actually defined — which may be `adventure.yaml`, or a
@@ -333,7 +402,7 @@ export function DevApp({
     category === "config"
       ? renderConfigFields(adventure)
       : category === "logs"
-        ? []
+        ? renderSessionLogFields(logContent.records)
         : (() => {
             const entry = entries[index];
             if (!entry) return [];
@@ -415,20 +484,21 @@ export function DevApp({
       setScroll(0);
       return;
     }
-    if (key.downArrow && entries.length > 0) {
+    if (key.downArrow && entryCount > 0) {
       setSelection((s) => ({
         ...s,
-        [category]: Math.min(entries.length - 1, index + 1),
+        [category]: Math.min(entryCount - 1, index + 1),
       }));
       setScroll(0);
       return;
     }
-    if (key.upArrow && entries.length > 0) {
+    if (key.upArrow && entryCount > 0) {
       setSelection((s) => ({ ...s, [category]: Math.max(0, index - 1) }));
       setScroll(0);
       return;
     }
-    if (input === "e") {
+    // Logs are read-only, so `e` is inert there (and absent from the footer).
+    if (input === "e" && category !== "logs") {
       editSelected();
       return;
     }
@@ -436,10 +506,21 @@ export function DevApp({
 
   const currentIssues = currentKey ? issues[currentKey] : undefined;
 
+  // Logs don't participate in the validation-issues map, so they never carry
+  // the ⚠ glyph.
+  const sidebarRows: SidebarRow[] =
+    category === "logs"
+      ? logEntries.map((l) => ({ key: l.file, label: logLabel(l), broken: false }))
+      : entries.map((e) => ({
+          key: entityKey(e.kind, e.id),
+          label: e.label,
+          broken: Boolean(issues[entityKey(e.kind, e.id)]),
+        }));
+
   const hotKeys = hotKeysFor({
     focus,
     submenuOpen,
-    entryCount: entries.length,
+    entryCount,
     isConfigCategory: category === "config",
     isLogsCategory: category === "logs",
     hasLiveSession: playState !== null,
@@ -472,20 +553,17 @@ export function DevApp({
             </Text>
           ))}
           <Text> </Text>
-          {entries.map((e, i) => {
-            const broken = Boolean(issues[entityKey(e.kind, e.id)]);
-            return (
-              <Text
-                key={`${e.kind}:${e.id}`}
-                bold={i === index}
-                color={broken ? "red" : i === index ? "cyan" : undefined}
-              >
-                {i === index ? "› " : "  "}
-                {e.label}
-                {broken ? " ⚠" : ""}
-              </Text>
-            );
-          })}
+          {sidebarRows.map((row, i) => (
+            <Text
+              key={row.key}
+              bold={i === index}
+              color={row.broken ? "red" : i === index ? "cyan" : undefined}
+            >
+              {i === index ? "› " : "  "}
+              {row.label}
+              {row.broken ? " ⚠" : ""}
+            </Text>
+          ))}
         </Box>
         <Box flexDirection="column" flexGrow={1} overflow="hidden">
           {submenuOpen ? (
@@ -507,6 +585,7 @@ export function DevApp({
               listModels={listModels}
               providers={providers}
               saveSlot={saveSlot}
+              sessionLog={sessionLogHandle}
               inputActive={focus === "play"}
               // Embedded, so the transcript must stay inside the content pane
               // rather than being written above the whole screen via <Static>.
@@ -517,6 +596,11 @@ export function DevApp({
                 setFocus("sidebar");
               }}
             />
+          ) : logContent.error ? (
+            <>
+              <Text color="red">⚠ Could not read log:</Text>
+              <Text color="red">{logContent.error}</Text>
+            </>
           ) : currentIssues ? (
             <>
               <Text color="red">⚠ Validation failed:</Text>
