@@ -484,18 +484,44 @@ export function DevApp({
       setScroll(0);
       return;
     }
-    if (key.downArrow && entryCount > 0) {
+    // A log is read like a document, so there the arrows swap roles: up/down
+    // scroll it a line at a time and left/right move between sessions. Every
+    // other category keeps up/down on selection, where the entries are short.
+    const selectStep = (delta: number) => {
+      if (entryCount === 0) return;
       setSelection((s) => ({
         ...s,
-        [category]: Math.min(entryCount - 1, index + 1),
+        [category]: Math.min(entryCount - 1, Math.max(0, index + delta)),
       }));
       setScroll(0);
-      return;
-    }
-    if (key.upArrow && entryCount > 0) {
-      setSelection((s) => ({ ...s, [category]: Math.max(0, index - 1) }));
-      setScroll(0);
-      return;
+    };
+
+    if (category === "logs") {
+      if (key.downArrow) {
+        setScroll((s) => Math.min(maxScroll, s + 1));
+        return;
+      }
+      if (key.upArrow) {
+        setScroll((s) => Math.max(0, s - 1));
+        return;
+      }
+      if (key.rightArrow) {
+        selectStep(1);
+        return;
+      }
+      if (key.leftArrow) {
+        selectStep(-1);
+        return;
+      }
+    } else {
+      if (key.downArrow && entryCount > 0) {
+        selectStep(1);
+        return;
+      }
+      if (key.upArrow && entryCount > 0) {
+        selectStep(-1);
+        return;
+      }
     }
     // Logs are read-only, so `e` is inert there (and absent from the footer).
     if (input === "e" && category !== "logs") {

@@ -56,12 +56,21 @@ export function hotKeysFor(context: HotKeyContext): HotKey[] {
 
   const keys: HotKey[] = [{ key: "Tab", label: "Category" }];
 
-  // Up/Down only move the selection when there is somewhere to move to.
-  if (!isConfigCategory && entryCount > 1) {
-    keys.push({ key: "↑↓", label: "Entity" });
-  }
-  if (canScrollContent) {
-    keys.push({ key: "PgUp/PgDn", label: "Scroll" });
+  if (isLogsCategory) {
+    // A log is a document you read rather than a record you inspect, so the
+    // arrows swap roles here: up/down scroll it a line at a time, and moving
+    // between sessions — the rarer action — becomes left/right.
+    if (canScrollContent) keys.push({ key: "↑↓", label: "Scroll" });
+    if (entryCount > 1) keys.push({ key: "←→", label: "Session" });
+    if (canScrollContent) keys.push({ key: "PgUp/PgDn", label: "Page" });
+  } else {
+    // Up/Down only move the selection when there is somewhere to move to.
+    if (!isConfigCategory && entryCount > 1) {
+      keys.push({ key: "↑↓", label: "Entity" });
+    }
+    if (canScrollContent) {
+      keys.push({ key: "PgUp/PgDn", label: "Scroll" });
+    }
   }
   // Editing needs a selection; the config category always has one implicitly.
   // Logs are read-only, so `e` is never offered there however many exist.

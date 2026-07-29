@@ -108,11 +108,51 @@ describe("hotKeysFor logs category", () => {
     expect(keys(logs)).not.toContain("e");
   });
 
-  it("still offers Entity navigation for the logs category", () => {
-    expect(keys(logs)).toContain("↑↓");
+  it("still offers navigation for the logs category", () => {
+    // Up/down scroll the log here, so moving between sessions is left/right.
+    expect(keys(logs)).toContain("←→");
   });
 
   it("omits Edit for an empty logs category too", () => {
     expect(keys({ ...logs, entryCount: 0 })).not.toContain("e");
+  });
+});
+
+describe("hotKeysFor logs navigation", () => {
+  const logs: HotKeyContext = {
+    ...sidebar,
+    entryCount: 3,
+    isConfigCategory: false,
+    isLogsCategory: true,
+    canPlay: false,
+  };
+
+  it("labels up/down as Scroll, not Entity, when the log overflows", () => {
+    const ctx = { ...logs, canScrollContent: true };
+    expect(labelFor(ctx, "↑↓")).toBe("Scroll");
+  });
+
+  it("offers left/right to move between sessions", () => {
+    expect(labelFor(logs, "←→")).toBe("Session");
+  });
+
+  it("omits the session key when there is only one log", () => {
+    expect(keys({ ...logs, entryCount: 1 })).not.toContain("←→");
+  });
+
+  it("omits up/down entirely when the log fits on screen", () => {
+    expect(keys({ ...logs, canScrollContent: false })).not.toContain("↑↓");
+  });
+
+  it("still offers PgUp/PgDn, relabelled as Page", () => {
+    const ctx = { ...logs, canScrollContent: true };
+    expect(labelFor(ctx, "PgUp/PgDn")).toBe("Page");
+  });
+
+  it("leaves entity categories on the old up/down-selects model", () => {
+    const rooms = { ...logs, isLogsCategory: false, canScrollContent: true };
+    expect(labelFor(rooms, "↑↓")).toBe("Entity");
+    expect(labelFor(rooms, "PgUp/PgDn")).toBe("Scroll");
+    expect(keys(rooms)).not.toContain("←→");
   });
 });

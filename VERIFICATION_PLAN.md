@@ -253,13 +253,15 @@ reading its log rather than just pressing `Escape`.
 8. Confirm exactly one session log entry appears, labeled with a timestamp and `dev`.
 9. Confirm the content pane shows: the session header (source `dev`, save slot `autosave`, resumed from `(new game)`), a "Turn 1" block with the typed input, and a narrator call entry marked `failed` carrying the error detail.
 10. Confirm `e` does nothing while this category is selected, and the hotkey footer does not list `Edit`.
-11. Press `q` to exit the tool.
-12. `rm -rf /tmp/xyzzy-verify-logs "$XYZZY_STATE"`
+11. Press `↓` a few times; confirm the log *scrolls* line by line rather than jumping to another session, and `↑` scrolls back. Confirm the footer labels `↑↓` as `Scroll` (not `Entity`).
+12. Press `q` to exit the tool.
+13. `rm -rf /tmp/xyzzy-verify-logs "$XYZZY_STATE"`
 
 **Success Criteria**:
 - [ ] Step 8 shows exactly one log entry, and `$XYZZY_STATE/xyzzy/cave-of-echoes/logs/` holds exactly one `.jsonl` file whose first line is a `"type":"session"` header
 - [ ] Step 9's content pane shows the header fields, the turn's input, and the failed narrator call's error detail
 - [ ] Step 10: no `Edit` hotkey, `e` is inert
+- [ ] Step 11: `↑`/`↓` scroll the log rather than changing session, and the footer reads `↑↓ Scroll`. With a second session recorded, `←`/`→` move between them and reset the scroll to the top
 - [ ] No crash or unhandled exception at any point despite no reachable model
 - [ ] The developer's real `~/.local/state/xyzzy` is untouched throughout
 

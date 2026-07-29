@@ -152,7 +152,8 @@ text `xyzzy new` would write.
 | Key                | Action                                              |
 | ------------------ | --------------------------------------------------- |
 | `Tab` / `Shift+Tab`| Next / previous category (wraps).                    |
-| `↑` / `↓`          | Move through the selected category's entries.        |
+| `↑` / `↓`          | Move through the selected category's entries — or scroll the log, in LLM Logs. |
+| `←` / `→`          | Move between sessions (LLM Logs only).               |
 | `PgUp` / `PgDn`    | Scroll the content pane when an entry doesn't fit.   |
 | `e`                | Edit the selected entry's file in `$EDITOR`.          |
 | `p`                | Play-test: New Game, or resume a save slot.           |
@@ -193,6 +194,12 @@ detector call's context and detection, and the narrator call's system prompt,
 digest, narration and actions, each with its duration. A call that *failed*
 records its error in place of a result, which is usually the reason you came
 looking.
+
+Because a log is a document you read rather than a record you inspect, the
+arrows swap roles in this category: `↑`/`↓` scroll the log a line at a time
+(`PgUp`/`PgDn` still move by the screenful), and `←`/`→` move between sessions.
+Every other category keeps `↑`/`↓` on entry selection. The footer tracks
+whichever set applies.
 
 The category is read-only: `e` does nothing there and never appears in the
 footer. Logs also never carry the `⚠` glyph, since they aren't part of

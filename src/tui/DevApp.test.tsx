@@ -21,6 +21,8 @@ import {
 /** Real terminal escape sequences — Ink parses these into `key.upArrow` etc. */
 const UP = "\x1b[A";
 const DOWN = "\x1b[B";
+const RIGHT = "\x1b[C";
+const LEFT = "\x1b[D";
 const ESC = "\x1b";
 const PGUP = "\x1b[5~";
 const PGDN = "\x1b[6~";
@@ -1197,5 +1199,119 @@ describe("DevApp LLM Logs category", () => {
     await press(stdin, "e");
     expect(opened).toEqual([]);
     unmount();
+  });
+});
+
+describe("DevApp LLM Logs navigation", () => {
+  const savedState = process.env.XDG_STATE_HOME;
+  beforeEach(() => {
+    process.env.XDG_STATE_HOME = mkdtempSync(join(tmpdir(), "xyzzy-devapp-lognav-"));
+  });
+  afterEach(() => {
+    if (savedState === undefined) delete process.env.XDG_STATE_HOME;
+    else process.env.XDG_STATE_HOME = savedState;
+  });
+
+  /**
+   * A log long enough to overflow a short pane, so scrolling has somewhere to
+   * go. The save slot is the marker: it appears near the top of the content
+   * pane and, unlike the timestamp and source, is not part of the sidebar
+   * label — so asserting on it can only be satisfied by the content pane.
+   */
+  function seedLongLog(startedAt: string, saveSlot: string) {
+    const handle = startSessionLog({
+      adventureId: adventure.meta.id,
+      source: "dev",
+      provider: { kind: "openai-compatible", model: "a" },
+      saveSlot,
+      resumedFrom: null,
+      clock: () => startedAt,
+    });
+    for (let turn = 1; turn <= 6; turn++) {
+      handle.appendTurn(handle.recorder.flushTurn(turn, `INPUT-${turn}`));
+    }
+  }
+
+  async function toLogsSized(stdin: TtyStdin) {
+    for (let i = 0; i < CATEGORIES.length - 1; i++) await press(stdin, "\t");
+  }
+
+  it("scrolls the log with Down rather than selecting another session", async () => {
+    seedLongLog("2026-07-28T12-00-00.000Z", "autosave");
+    const { stdout, stdin, app } = renderSized(74, 14);
+    await toLogsSized(stdin);
+    await expect.poll(() => frameText(stdout)).toContain("Save slot");
+
+    for (let i = 0; i < 12; i++) await press(stdin, DOWN);
+    // Scrolled past the header rather than jumping to another session.
+    await expect.poll(() => frameText(stdout)).not.toContain("Save slot");
+    expect(frameText(stdout)).toContain("Turn");
+    app.unmount();
+  });
+
+  it("Up scrolls back toward the top of the log", async () => {
+    seedLongLog("2026-07-28T12-00-00.000Z", "autosave");
+    const { stdout, stdin, app } = renderSized(74, 14);
+    await toLogsSized(stdin);
+    for (let i = 0; i < 12; i++) await press(stdin, DOWN);
+    await expect.poll(() => frameText(stdout)).not.toContain("Save slot");
+
+    for (let i = 0; i < 15; i++) await press(stdin, UP);
+    await expect.poll(() => frameText(stdout)).toContain("Save slot");
+    app.unmount();
+  });
+
+  it("Right and Left move between sessions", async () => {
+    seedLongLog("2026-07-28T10-00-00.000Z", "older-slot");
+    seedLongLog("2026-07-28T12-00-00.000Z", "newer-slot");
+    const { stdout, stdin, app } = renderSized(74, 14);
+    await toLogsSized(stdin);
+    // Newest first, so the 12:00 session is selected by default.
+    await expect.poll(() => frameText(stdout)).toContain("newer-slot");
+
+    await press(stdin, RIGHT);
+    await expect.poll(() => frameText(stdout)).toContain("older-slot");
+
+    await press(stdin, LEFT);
+    await expect.poll(() => frameText(stdout)).toContain("newer-slot");
+    app.unmount();
+  });
+
+  it("clamps session selection at both ends", async () => {
+    seedLongLog("2026-07-28T10-00-00.000Z", "older-slot");
+    seedLongLog("2026-07-28T12-00-00.000Z", "newer-slot");
+    const { stdout, stdin, app } = renderSized(74, 14);
+    await toLogsSized(stdin);
+    await press(stdin, LEFT); // already at the newest
+    await expect.poll(() => frameText(stdout)).toContain("newer-slot");
+    await press(stdin, RIGHT);
+    await press(stdin, RIGHT); // already at the oldest
+    await expect.poll(() => frameText(stdout)).toContain("older-slot");
+    app.unmount();
+  });
+
+  it("selecting another session returns to the top of the log", async () => {
+    seedLongLog("2026-07-28T10-00-00.000Z", "older-slot");
+    seedLongLog("2026-07-28T12-00-00.000Z", "newer-slot");
+    const { stdout, stdin, app } = renderSized(74, 14);
+    await toLogsSized(stdin);
+    for (let i = 0; i < 12; i++) await press(stdin, DOWN); // scroll away from the top
+    await expect.poll(() => frameText(stdout)).not.toContain("Save slot");
+
+    await press(stdin, RIGHT);
+    await expect.poll(() => frameText(stdout)).toContain("older-slot");
+    app.unmount();
+  });
+
+  it("leaves Left and Right inert in an entity category", async () => {
+    const { stdout, stdin, app } = renderSized(74, 14);
+    await press(stdin, "\t");
+    await press(stdin, "\t");
+    await press(stdin, "\t"); // -> Rooms, Cavern selected
+    await expect.poll(() => frameText(stdout)).toContain("A dark cavern.");
+    await press(stdin, RIGHT);
+    await press(stdin, LEFT);
+    expect(frameText(stdout)).toContain("A dark cavern.");
+    app.unmount();
   });
 });
