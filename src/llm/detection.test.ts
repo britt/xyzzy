@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { zodSchema } from "ai";
 import {
   buildDetectionSchema,
   buildDetectionContext,
@@ -95,6 +96,35 @@ describe("buildDetectionSchema", () => {
     ).toMatchObject({
       triggeredInteractions: [{ charId: "barkeep", interactionId: "offer-drink" }],
     });
+  });
+
+  it("encodes an empty candidate list as an enforceable maxItems:0 bound, not an unconstrained `not: {}` schema", () => {
+    // z.array(z.never()) compiles to `items: { not: {} }`, which most local
+    // json-schema-to-grammar compilers (LM Studio/llama.cpp) can't turn into
+    // an actual constraint — the field ends up unconstrained at generation
+    // time even though it's rejected client-side after the fact. See the
+    // 2026-07-28T23-26-20-230Z.jsonl session log where a local model dumped
+    // garbage into `triggeredInteractions` because nothing at generation
+    // time actually stopped it.
+    const schema = buildDetectionSchema(exits, beats); // no characterBeats/interactions -> empty candidates
+    const jsonSchema = zodSchema(schema).jsonSchema as {
+      properties: Record<string, Record<string, unknown>>;
+    };
+
+    for (const field of ["advancedCharacterBeats", "triggeredInteractions"]) {
+      const fieldSchema = jsonSchema.properties[field]!;
+      expect(fieldSchema).toMatchObject({ maxItems: 0 });
+      expect(JSON.stringify(fieldSchema)).not.toContain('"not"');
+    }
+  });
+
+  it("encodes an empty beat list (room with no active beats) the same enforceable way", () => {
+    const schema = buildDetectionSchema(exits, []);
+    const jsonSchema = zodSchema(schema).jsonSchema as {
+      properties: Record<string, Record<string, unknown>>;
+    };
+    expect(jsonSchema.properties.advancedBeats).toMatchObject({ maxItems: 0 });
+    expect(JSON.stringify(jsonSchema.properties.advancedBeats)).not.toContain('"not"');
   });
 });
 

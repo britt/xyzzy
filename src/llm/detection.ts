@@ -43,17 +43,28 @@ export function buildDetectionSchema(
     .enum(["none", ...directions] as [string, ...string[]])
     .transform((v) => (v === "none" ? null : v));
 
+  // For an empty candidate list, `z.array(z.never())` used to be the encoding
+  // here. It compiles to JSON Schema `items: { not: {} }`, which is
+  // mathematically "must be empty" but which most local json-schema-to-grammar
+  // compilers (LM Studio/llama.cpp) can't turn into an actual generation-time
+  // constraint — the `not` keyword generally can't be compiled into a CFG. The
+  // field ends up unconstrained at generation time even though it's rejected
+  // client-side after the fact, so a confused model can dump garbage into it
+  // and lose the whole detection call. `max(0)` instead compiles to a plain
+  // `maxItems: 0`, which grammar compilers can and do enforce.
+  const emptyArray = z.array(z.string()).max(0).default([]);
+
   const beatIds = activeBeats.map((b) => b.id);
   const advancedBeats =
     beatIds.length > 0
       ? z.array(z.enum(beatIds as [string, ...string[]])).default([])
-      : z.array(z.never()).default([]);
+      : emptyArray;
 
   const charBeatTokens = characterBeats.map((b) => encodeToken(b.charId, b.beatId));
   const advancedCharacterBeats = (
     charBeatTokens.length > 0
       ? z.array(z.enum(charBeatTokens as [string, ...string[]])).default([])
-      : z.array(z.never()).default([])
+      : emptyArray
   ).transform((tokens) =>
     tokens.map((t) => {
       const { charId, id } = decodeToken(t);
@@ -65,7 +76,7 @@ export function buildDetectionSchema(
   const triggeredInteractions = (
     interactionTokens.length > 0
       ? z.array(z.enum(interactionTokens as [string, ...string[]])).default([])
-      : z.array(z.never()).default([])
+      : emptyArray
   ).transform((tokens) =>
     tokens.map((t) => {
       const { charId, id } = decodeToken(t);

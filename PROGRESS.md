@@ -657,3 +657,36 @@ test and the shipped Scenario 10 reflect this.
 - Build: ✅ Successful (`bun run build`, zero errors).
 - Linting: ✅ Clean (`eslint .`, zero errors/warnings).
 - Typecheck: ✅ Clean (`tsc --noEmit`).
+
+## Task: Fix detector schema's unenforceable "no candidates" encoding - COMPLETE
+
+- Started: 2026-07-29
+- Bug: diagnosed from a real Cave of Echoes session log
+  (`~/.local/state/xyzzy/cave-of-echoes/logs/2026-07-28T23-26-20-230Z.jsonl`)
+  where the detector call failed on turns 1 and 2. `buildDetectionSchema`
+  encoded "no valid candidates" (an empty `characterBeats`/`interactions`/
+  `activeBeats` list) as `z.array(z.never())`, which compiles to JSON Schema
+  `items: { not: {} }`. Confirmed via `zodSchema()` from the `ai` package that
+  this is exactly what got sent to the model. `not` generally can't be
+  compiled into a constrained-decoding grammar (LM Studio/llama.cpp), so the
+  field was unconstrained at generation time even though Zod rejected it
+  client-side afterward — the local model dumped garbage into
+  `triggeredInteractions` (objects, then a bare string) and the whole
+  detection call was discarded both turns.
+- Fix: replaced `z.array(z.never()).default([])` with
+  `z.array(z.string()).max(0).default([])` (an `emptyArray` schema shared
+  across `advancedBeats`/`advancedCharacterBeats`/`triggeredInteractions`),
+  which compiles to a plain `maxItems: 0` — a bound grammar compilers can
+  actually enforce.
+- `src/llm/detection.test.ts`: RED — two new tests asserting the JSON Schema
+  for an empty-candidate field has `maxItems: 0` and contains no `"not"` key,
+  for both the character-beat/interaction case and the empty-active-beats
+  case. Failed for the right reason (both showed the actual `items: {"not":
+  {}}` shape). GREEN — the `emptyArray` schema swap in `detection.ts`.
+- Tests: 540 passing, 0 failing (up from 538 — 2 new tests added).
+- Coverage: detection.ts 100%/95.45%/100%/100% (lines/branches/functions/
+  statements); overall 92.65%/89.75%/96.26%/92.65% — all above the 90/85/90/90
+  thresholds.
+- Build: ✅ Successful (`bun run build`, zero errors).
+- Linting: ✅ Clean (`eslint .`, zero errors/warnings).
+- Completed: 2026-07-29
