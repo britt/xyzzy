@@ -4,7 +4,6 @@ import type {
   NarratorCallLog,
   SessionHeader,
   SessionLogRecord,
-  TurnRecord,
 } from "../../llm/sessionLog.js";
 
 /**
@@ -35,12 +34,26 @@ function renderHeader(header: SessionHeader): FieldRow[] {
   ];
 }
 
+const SOLID_RULE: FieldRow = { kind: "rule", style: "solid" };
+const DOTTED_RULE: FieldRow = { kind: "rule", style: "dotted" };
+
 /** e.g. `Narrator call 1 (12ms, ok)` — which call, how long, and whether it landed. */
 function callLabel(role: string, index: number, ms: number, ok: boolean): string {
   return `${role} call ${index + 1} (${ms}ms, ${ok ? "ok" : "failed"})`;
 }
 
-function renderNarratorCall(call: NarratorCallLog, index: number): FieldRow[] {
+/**
+ * @param promptLabel label to render this call's system prompt under, or
+ * `null` to omit it — it is constant for an adventure, so repeating it on
+ * every turn buries the turn's own exchange. Shown once for the session, and
+ * again only if it actually changes (which `xyzzy dev` allows: editing the
+ * adventure mid-session rebuilds it).
+ */
+function renderNarratorCall(
+  call: NarratorCallLog,
+  index: number,
+  promptLabel: string | null,
+): FieldRow[] {
   const base: FieldRow[] = [
     {
       kind: "scalar",
@@ -48,12 +61,16 @@ function renderNarratorCall(call: NarratorCallLog, index: number): FieldRow[] {
       value: "",
       dim: false,
     },
-    {
-      kind: "block",
-      label: "System prompt",
-      value: call.context.systemPrompt,
-      dim: false,
-    },
+    ...(promptLabel === null
+      ? []
+      : ([
+          {
+            kind: "block",
+            label: promptLabel,
+            value: call.context.systemPrompt,
+            dim: false,
+          },
+        ] as FieldRow[])),
     { kind: "block", label: "Digest", value: call.context.digest, dim: false },
   ];
   if (call.ok) {
@@ -98,21 +115,59 @@ function renderDetectorCall(call: DetectorCallLog, index: number): FieldRow[] {
       ];
 }
 
-/** Detection runs before narration, so the rows read in the order the turn ran. */
-function renderTurn(turn: TurnRecord<DetectorCallLog, NarratorCallLog>): FieldRow[] {
-  const rows: FieldRow[] = [
-    { kind: "heading", title: `Turn ${turn.turn}` },
-    { kind: "block", label: "Input", value: turn.input, dim: false },
-  ];
-  turn.detector.forEach((call, i) => rows.push(...renderDetectorCall(call, i)));
-  turn.narrator.forEach((call, i) => rows.push(...renderNarratorCall(call, i)));
-  return rows;
+/** The system prompt the session opened with, if it made any narrator call. */
+function firstSystemPrompt(records: SessionLogRecord[]): string | undefined {
+  for (const record of records) {
+    if (record.type !== "session" && record.narrator.length > 0) {
+      return record.narrator[0]!.context.systemPrompt;
+    }
+  }
+  return undefined;
 }
 
 export function renderSessionLogFields(records: SessionLogRecord[]): FieldRow[] {
   const rows: FieldRow[] = [];
+  const sessionPrompt = firstSystemPrompt(records);
+  // The prompt currently on screen, so a turn only re-prints it when it differs.
+  let shownPrompt: string | undefined;
+
   for (const record of records) {
-    rows.push(...(record.type === "session" ? renderHeader(record) : renderTurn(record)));
+    if (record.type === "session") {
+      rows.push(...renderHeader(record));
+      if (sessionPrompt !== undefined) {
+        rows.push({
+          kind: "block",
+          label: "System prompt",
+          value: sessionPrompt,
+          dim: false,
+        });
+        shownPrompt = sessionPrompt;
+      }
+      continue;
+    }
+
+    // A solid rule opens each turn, so the big units of the log are obvious
+    // when scrolling; the exchanges inside one are separated by dotted rules.
+    rows.push(SOLID_RULE);
+    rows.push({ kind: "heading", title: `Turn ${record.turn}` });
+    rows.push({ kind: "block", label: "Input", value: record.input, dim: false });
+
+    // Detection runs before narration, so the rows read in the order it ran.
+    record.detector.forEach((call, i) => {
+      rows.push(DOTTED_RULE);
+      rows.push(...renderDetectorCall(call, i));
+    });
+    record.narrator.forEach((call, i) => {
+      rows.push(DOTTED_RULE);
+      const promptLabel =
+        shownPrompt === undefined
+          ? "System prompt"
+          : call.context.systemPrompt !== shownPrompt
+            ? "System prompt (changed)"
+            : null;
+      rows.push(...renderNarratorCall(call, i, promptLabel));
+      if (promptLabel !== null) shownPrompt = call.context.systemPrompt;
+    });
   }
   return rows;
 }

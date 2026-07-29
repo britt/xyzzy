@@ -20,7 +20,12 @@ export type FieldRow =
   /** Prose (description, persona, premise) shown under its label. */
   | { kind: "block"; label: string; value: string; dim: boolean }
   /** Structural data; an empty list renders as a dim placeholder. */
-  | { kind: "list"; label: string; items: string[] };
+  | { kind: "list"; label: string; items: string[] }
+  /**
+   * A horizontal divider spanning the pane. Solid separates the big units of a
+   * log (one turn from the next); dotted separates the exchanges within one.
+   */
+  | { kind: "rule"; style: "solid" | "dotted" };
 
 /** Reuse the `xyzzy new` placeholder copy so a field reads identically whether
  * you're creating it or browsing it unset. */

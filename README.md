@@ -189,11 +189,18 @@ The last sidebar category, **LLM Logs**, lists every recorded session for this
 adventure, newest first, labelled with when it started and what launched it
 (`dev` or `play`). Selecting one shows, through the same labelled-row rendering
 every other category uses: the session header (start time, provider, save slot,
-whether it resumed a save), then each turn in order — the player's input, the
-detector call's context and detection, and the narrator call's system prompt,
-digest, narration and actions, each with its duration. A call that *failed*
-records its error in place of a result, which is usually the reason you came
-looking.
+whether it resumed a save) followed by the system prompt, then each turn in
+order — the player's input, the detector call's context and detection, and the
+narrator call's digest, narration and actions, each with its duration. A call
+that *failed* records its error in place of a result, which is usually the
+reason you came looking.
+
+Each turn opens with a solid rule and the exchanges inside it are separated by
+dotted ones, so the structure survives scrolling. The system prompt is shown
+once for the session rather than repeated on every turn — it's constant, and
+repeating it buried the turn's own exchange. If it ever *does* change
+mid-session (editing the adventure in `xyzzy dev` rebuilds it), the new one
+appears on the turn it changed, labelled `System prompt (changed)`.
 
 Because a log is a document you read rather than a record you inspect, the
 arrows swap roles in this category: `↑`/`↓` scroll the log a line at a time

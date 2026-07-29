@@ -143,6 +143,7 @@ const STYLES: Record<
   value: {},
   placeholder: { dim: true, italic: true },
   item: {},
+  rule: { dim: true },
 };
 
 function ContentLine({ line }: { line: DisplayLine }) {
