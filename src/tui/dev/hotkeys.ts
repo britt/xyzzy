@@ -84,3 +84,46 @@ export function hotKeysFor(context: HotKeyContext): HotKey[] {
 
   return keys;
 }
+
+/** Columns between two rendered keys in the footer. */
+const HOTKEY_GAP = 3;
+
+/** Columns one key occupies, rendered as `"<key> <label>"`. */
+function hotKeyWidth(hotKey: HotKey): number {
+  return hotKey.key.length + 1 + hotKey.label.length;
+}
+
+/**
+ * Trim the footer to whole keys that fit `width`.
+ *
+ * Ink does not clip an overflowing footer usefully: it shrinks the flex row by
+ * eating the leading `<Text>` of each entry — which is the key glyph — leaving
+ * a row of labels with no way to tell what to press. So the trimming happens
+ * here, in whole entries, the same reason `contentLines.ts` flattens the
+ * content pane itself rather than handing Ink too many rows.
+ *
+ * The last key is always kept: it is `q Quit`, and a footer that cannot tell
+ * you how to leave is the one failure worth reserving space for.
+ */
+export function fitHotKeys(
+  hotKeys: HotKey[],
+  width: number | undefined,
+): HotKey[] {
+  if (width === undefined || hotKeys.length === 0) return hotKeys;
+
+  const total =
+    hotKeys.reduce((sum, k) => sum + hotKeyWidth(k), 0) +
+    HOTKEY_GAP * (hotKeys.length - 1);
+  if (total <= width) return hotKeys;
+
+  const last = hotKeys[hotKeys.length - 1]!;
+  const kept: HotKey[] = [];
+  let used = hotKeyWidth(last);
+  for (const hotKey of hotKeys.slice(0, -1)) {
+    const cost = hotKeyWidth(hotKey) + HOTKEY_GAP;
+    if (used + cost > width) break;
+    used += cost;
+    kept.push(hotKey);
+  }
+  return [...kept, last];
+}

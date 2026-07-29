@@ -44,7 +44,7 @@ import {
   devLayout,
   playViewport,
 } from "./dev/layout.js";
-import { hotKeysFor } from "./dev/hotkeys.js";
+import { fitHotKeys, hotKeysFor } from "./dev/hotkeys.js";
 import {
   listSessionLogs,
   readSessionLog,
@@ -543,16 +543,21 @@ export function DevApp({
           broken: Boolean(issues[entityKey(e.kind, e.id)]),
         }));
 
-  const hotKeys = hotKeysFor({
-    focus,
-    submenuOpen,
-    entryCount,
-    isConfigCategory: category === "config",
-    isLogsCategory: category === "logs",
-    hasLiveSession: playState !== null,
-    canPlay,
-    canScrollContent,
-  });
+  // Trimmed to whole keys that fit, so a narrow terminal drops entries rather
+  // than letting Ink eat the key glyphs and leave unattributed labels.
+  const hotKeys = fitHotKeys(
+    hotKeysFor({
+      focus,
+      submenuOpen,
+      entryCount,
+      isConfigCategory: category === "config",
+      isLogsCategory: category === "logs",
+      hasLiveSession: playState !== null,
+      canPlay,
+      canScrollContent,
+    }),
+    layout.width,
+  );
 
   return (
     <Box flexDirection="column" width={layout.width} height={layout.height}>
