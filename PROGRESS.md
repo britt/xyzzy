@@ -619,3 +619,41 @@ test and the shipped Scenario 10 reflect this.
   isolation under coverage on both this branch and `origin/main`, and a repeat
   full run was green — contention, not a regression.
 - Completed: 2026-07-28
+
+### Follow-up: arrow keys scroll the log
+
+- Started / Completed: 2026-07-29
+- Requested change: in the LLM Logs category, `↑`/`↓` should scroll the log
+  rather than `PgUp`/`PgDn`. That displaced session selection, which owned
+  those keys, so it moved to `←`/`→` (previously unused in `DevApp`) —
+  "left/right picks the item, up/down moves within it". `PgUp`/`PgDn` stay,
+  relabelled `Page`. Every other category is unchanged; the inconsistency is
+  deliberate, since a log is read like a document rather than inspected like a
+  short record.
+- `dev/hotkeys.test.ts`: RED — `↑↓` labelled `Scroll` (only when the log
+  overflows), `←→` labelled `Session` (only with more than one log),
+  `PgUp/PgDn` labelled `Page`, and entity categories left on the old model.
+  GREEN — an `isLogsCategory` branch in `hotKeysFor`.
+- `DevApp.test.tsx`: RED — down/up scroll instead of changing session, right/
+  left move between sessions and clamp at both ends, selecting a session
+  resets scroll to the top, and left/right stay inert in an entity category.
+  GREEN — category-specific arrow handling in `useInput` sharing one
+  `selectStep` helper.
+- One earlier test changed with the design: "still offers Entity navigation for
+  the logs category" asserted `↑↓` was always present for logs; under the new
+  model `↑↓` appears only when the log overflows, so it now asserts `←→`.
+- Testing note: the first draft of the scroll tests asserted on `Turn 1` before
+  scrolling, but at 74×14 the session header alone fills the pane and the turns
+  start below the fold. They now key on `Save slot` plus a per-session save-slot
+  name — chosen because, unlike the timestamp and source, the slot is *not* part
+  of the sidebar label, so a passing assertion can only have come from the
+  content pane.
+- Mouse-wheel scrolling was considered and declined: Ink 5.2.1 has no mouse
+  support, so it would mean enabling terminal SGR mouse reporting
+  (`\x1b[?1000h\x1b[?1006h`) and parsing wheel events off raw stdin. That mode
+  is terminal-wide and takes over click-drag text selection for the whole
+  session, which is too high a price now that the arrow keys cover the need.
+- Tests: 518 passing, 0 failing (up from 506 — 12 new tests added).
+- Build: ✅ Successful (`bun run build`, zero errors).
+- Linting: ✅ Clean (`eslint .`, zero errors/warnings).
+- Typecheck: ✅ Clean (`tsc --noEmit`).
