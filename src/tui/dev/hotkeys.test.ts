@@ -1,11 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { hotKeysFor, type HotKeyContext } from "./hotkeys.js";
+import { fitHotKeys, hotKeysFor, type HotKey, type HotKeyContext } from "./hotkeys.js";
 
 const sidebar: HotKeyContext = {
   focus: "sidebar",
   submenuOpen: false,
   entryCount: 0,
   isConfigCategory: true,
+  isLogsCategory: false,
   hasLiveSession: false,
   canPlay: true,
 };
@@ -91,5 +92,121 @@ describe("hotKeysFor content scrolling", () => {
     expect(
       keys({ ...sidebar, focus: "play", canScrollContent: true }),
     ).not.toContain("PgUp/PgDn");
+  });
+});
+
+describe("hotKeysFor logs category", () => {
+  const logs: HotKeyContext = {
+    ...sidebar,
+    entryCount: 3,
+    isConfigCategory: false,
+    isLogsCategory: true,
+    canPlay: false,
+  };
+
+  it("omits the Edit key for the logs category, even with entries selected", () => {
+    expect(keys(logs)).not.toContain("e");
+  });
+
+  it("still offers navigation for the logs category", () => {
+    // Up/down scroll the log here, so moving between sessions is left/right.
+    expect(keys(logs)).toContain("←→");
+  });
+
+  it("omits Edit for an empty logs category too", () => {
+    expect(keys({ ...logs, entryCount: 0 })).not.toContain("e");
+  });
+});
+
+describe("hotKeysFor logs navigation", () => {
+  const logs: HotKeyContext = {
+    ...sidebar,
+    entryCount: 3,
+    isConfigCategory: false,
+    isLogsCategory: true,
+    canPlay: false,
+  };
+
+  it("labels up/down as Scroll, not Entity, when the log overflows", () => {
+    const ctx = { ...logs, canScrollContent: true };
+    expect(labelFor(ctx, "↑↓")).toBe("Scroll");
+  });
+
+  it("offers left/right to move between sessions", () => {
+    expect(labelFor(logs, "←→")).toBe("Session");
+  });
+
+  it("omits the session key when there is only one log", () => {
+    expect(keys({ ...logs, entryCount: 1 })).not.toContain("←→");
+  });
+
+  it("omits up/down entirely when the log fits on screen", () => {
+    expect(keys({ ...logs, canScrollContent: false })).not.toContain("↑↓");
+  });
+
+  it("still offers PgUp/PgDn, relabelled as Page", () => {
+    const ctx = { ...logs, canScrollContent: true };
+    expect(labelFor(ctx, "PgUp/PgDn")).toBe("Page");
+  });
+
+  it("leaves entity categories on the old up/down-selects model", () => {
+    const rooms = { ...logs, isLogsCategory: false, canScrollContent: true };
+    expect(labelFor(rooms, "↑↓")).toBe("Entity");
+    expect(labelFor(rooms, "PgUp/PgDn")).toBe("Scroll");
+    expect(keys(rooms)).not.toContain("←→");
+  });
+});
+
+describe("fitHotKeys", () => {
+  const keys3: HotKey[] = [
+    { key: "Tab", label: "Category" }, // 12
+    { key: "↑↓", label: "Scroll" }, // 9
+    { key: "q", label: "Quit" }, // 6
+  ];
+
+  it("returns every key when they all fit", () => {
+    // 12 + 3 + 9 + 3 + 6 = 33
+    expect(fitHotKeys(keys3, 33)).toEqual(keys3);
+    expect(fitHotKeys(keys3, 100)).toEqual(keys3);
+  });
+
+  it("returns every key when the width is unknown", () => {
+    expect(fitHotKeys(keys3, undefined)).toEqual(keys3);
+  });
+
+  it("drops keys that do not fit, always keeping Quit last", () => {
+    // Room for "Tab Category" + gap + "q Quit" = 12 + 3 + 6 = 21, but not ↑↓.
+    expect(fitHotKeys(keys3, 21)).toEqual([keys3[0], keys3[2]]);
+  });
+
+  it("falls back to just the last key when nothing else fits", () => {
+    expect(fitHotKeys(keys3, 8)).toEqual([keys3[2]]);
+  });
+
+  it("keeps the last key even when it alone overflows", () => {
+    expect(fitHotKeys(keys3, 1)).toEqual([keys3[2]]);
+  });
+
+  it("handles an empty list", () => {
+    expect(fitHotKeys([], 40)).toEqual([]);
+  });
+
+  it("keeps the real logs footer legible at 60 columns", () => {
+    const logs = hotKeysFor({
+      focus: "sidebar",
+      submenuOpen: false,
+      entryCount: 3,
+      isConfigCategory: false,
+      isLogsCategory: true,
+      hasLiveSession: false,
+      canPlay: true,
+      canScrollContent: true,
+    });
+    const fitted = fitHotKeys(logs, 60);
+    const rendered = fitted.map((k) => `${k.key} ${k.label}`).join("   ");
+    expect(rendered.length).toBeLessThanOrEqual(60);
+    // Whatever survives is a whole entry — never a label with its key eaten.
+    for (const k of fitted) expect(rendered).toContain(`${k.key} ${k.label}`);
+    expect(fitted.at(-1)).toEqual({ key: "q", label: "Quit" });
   });
 });

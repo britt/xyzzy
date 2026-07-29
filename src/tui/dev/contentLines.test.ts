@@ -148,3 +148,26 @@ describe("clampScroll", () => {
     expect(clampScroll(7, 100, 10)).toBe(7);
   });
 });
+
+describe("rule rows", () => {
+  it("renders a solid rule as a full-width line", () => {
+    const lines = layoutFieldRows([{ kind: "rule", style: "solid" }], 10);
+    expect(lines).toEqual([
+      { indent: 0, segments: [{ text: "─".repeat(10), style: "rule" }] },
+    ]);
+  });
+
+  it("renders a dotted rule with a visibly different glyph", () => {
+    const lines = layoutFieldRows([{ kind: "rule", style: "dotted" }], 8);
+    expect(lines).toEqual([
+      { indent: 0, segments: [{ text: "┄".repeat(8), style: "rule" }] },
+    ]);
+  });
+
+  it("never exceeds the pane width", () => {
+    for (const width of [1, 5, 40, 120]) {
+      const [line] = layoutFieldRows([{ kind: "rule", style: "solid" }], width);
+      expect(line!.segments[0]!.text).toHaveLength(width);
+    }
+  });
+});

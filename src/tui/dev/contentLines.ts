@@ -16,7 +16,8 @@ export type LineStyle =
   | "label"
   | "value"
   | "placeholder"
-  | "item";
+  | "item"
+  | "rule";
 
 export interface DisplaySegment {
   text: string;
@@ -84,9 +85,15 @@ function valueStyle(dim: boolean): LineStyle {
   return dim ? "placeholder" : "value";
 }
 
+/** Glyphs the two divider weights are drawn from. */
+const RULE_GLYPH = { solid: "─", dotted: "┄" } as const;
+
 /** Lay a single field row out as terminal rows. */
 function layoutRow(row: FieldRow, width: number): DisplayLine[] {
   switch (row.kind) {
+    case "rule":
+      return [styled(RULE_GLYPH[row.style].repeat(width), "rule")];
+
     case "heading": {
       const lines = wrapped(row.title, "title", width);
       if (row.subtitle !== undefined) {

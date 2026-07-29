@@ -40,9 +40,14 @@ export function buildProgram(): Command {
     .argument("<path>", "adventure directory")
     .option("--save <slot>", "resume a specific save slot")
     .option("--provider <name>", "provider to use for this session")
+    .option(
+      "--log-llm",
+      "record every detector/narrator LLM call to a session log file",
+    )
     .description("launch the play TUI")
-    .action((path: string, opts: { save?: string; provider?: string }) =>
-      play(path, opts),
+    .action(
+      (path: string, opts: { save?: string; provider?: string; logLlm?: boolean }) =>
+        play(path, opts),
     );
 
   program

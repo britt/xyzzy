@@ -1,0 +1,288 @@
+import {
+  appendFileSync,
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  readdirSync,
+} from "node:fs";
+import { homedir } from "node:os";
+import { join } from "node:path";
+import { slugify } from "../util/slug.js";
+import { describeError } from "../util/log.js";
+import type { Detection, DetectionContext, Detector } from "./Detector.js";
+import type {
+  NarratorContext,
+  NarratorModel,
+  NarratorResult,
+} from "./NarratorModel.js";
+
+/**
+ * Per-session record of every LLM call a play session makes, written as JSON
+ * lines so a long session can be appended to cheaply and read back a line at a
+ * time. One file per session: a `session` header line, then one `turn` line per
+ * completed turn.
+ */
+
+/** Which entry point started the session. */
+export type SessionSource = "dev" | "play";
+
+export interface SessionHeader {
+  type: "session";
+  startedAt: string;
+  adventure: string;
+  source: SessionSource;
+  provider: { kind: string; baseURL?: string; model: string };
+  saveSlot: string;
+  resumedFrom: string | null;
+}
+
+/** One LLM call: what went in, how long it took, and what came back (or failed). */
+export type CallLog<Ctx, Res> =
+  | { context: Ctx; ms: number; ok: true; result: Res }
+  | { context: Ctx; ms: number; ok: false; error: Record<string, unknown> };
+
+export interface TurnRecord<DetectorCall = unknown, NarratorCall = unknown> {
+  type: "turn";
+  turn: number;
+  input: string;
+  detector: DetectorCall[];
+  narrator: NarratorCall[];
+}
+
+/**
+ * `$XDG_STATE_HOME/xyzzy/<slug>/logs` — mirrors `savesDir` in
+ * `engine/save.ts` exactly (same base-dir resolution, same slugify + hex
+ * fallback for an id that collapses to nothing), just under `logs` instead
+ * of `saves`.
+ */
+function sessionLogDir(adventureId: string): string {
+  const base = process.env.XDG_STATE_HOME ?? join(homedir(), ".local", "state");
+  const slug =
+    slugify(adventureId) || Buffer.from(adventureId, "utf8").toString("hex");
+  return join(base, "xyzzy", slug, "logs");
+}
+
+export function sessionLogPath(adventureId: string, sessionId: string): string {
+  return join(sessionLogDir(adventureId), `${sessionId}.jsonl`);
+}
+
+export type DetectorCallLog = CallLog<DetectionContext, Detection>;
+export type NarratorCallLog = CallLog<NarratorContext, NarratorResult>;
+
+export type SessionLogRecord =
+  | SessionHeader
+  | TurnRecord<DetectorCallLog, NarratorCallLog>;
+
+/**
+ * Buffers the LLM calls a single turn makes. The engine is untouched: the
+ * recorder hands back decorated `NarratorModel`/`Detector` objects, so anything
+ * that already accepts those records itself by construction. A failed call is
+ * recorded and then rethrown — the caller sees exactly the error it would have
+ * without recording, and a failed turn is the one most worth inspecting later.
+ */
+export class SessionRecorder {
+  private pendingDetector: DetectorCallLog[] = [];
+  private pendingNarrator: NarratorCallLog[] = [];
+
+  wrapDetector(detector: Detector): Detector {
+    return {
+      detect: async (ctx) => {
+        const start = Date.now();
+        try {
+          const result = await detector.detect(ctx);
+          this.pendingDetector.push({
+            context: ctx,
+            ms: Date.now() - start,
+            ok: true,
+            result,
+          });
+          return result;
+        } catch (err) {
+          this.pendingDetector.push({
+            context: ctx,
+            ms: Date.now() - start,
+            ok: false,
+            error: describeError(err),
+          });
+          throw err;
+        }
+      },
+    };
+  }
+
+  wrapModel(model: NarratorModel): NarratorModel {
+    return {
+      generate: async (ctx) => {
+        const start = Date.now();
+        try {
+          const result = await model.generate(ctx);
+          this.pendingNarrator.push({
+            context: ctx,
+            ms: Date.now() - start,
+            ok: true,
+            result,
+          });
+          return result;
+        } catch (err) {
+          this.pendingNarrator.push({
+            context: ctx,
+            ms: Date.now() - start,
+            ok: false,
+            error: describeError(err),
+          });
+          throw err;
+        }
+      },
+    };
+  }
+
+  /** Snapshot both buffers into one turn record and start the next turn empty. */
+  flushTurn(
+    turn: number,
+    input: string,
+  ): TurnRecord<DetectorCallLog, NarratorCallLog> {
+    const record: TurnRecord<DetectorCallLog, NarratorCallLog> = {
+      type: "turn",
+      turn,
+      input,
+      detector: this.pendingDetector,
+      narrator: this.pendingNarrator,
+    };
+    this.pendingDetector = [];
+    this.pendingNarrator = [];
+    return record;
+  }
+}
+
+export interface SessionLogHandle {
+  path: string;
+  recorder: SessionRecorder;
+  appendTurn(record: TurnRecord<DetectorCallLog, NarratorCallLog>): void;
+}
+
+export interface StartSessionLogOptions {
+  adventureId: string;
+  source: SessionSource;
+  provider: { kind: string; baseURL?: string; model: string };
+  saveSlot: string;
+  resumedFrom: string | null;
+  /** injectable for deterministic tests; defaults to the real clock. */
+  clock?: () => string;
+}
+
+/** `:` and `.` are legal in a session id but hostile in a filename. */
+function sanitizeForFilename(iso: string): string {
+  return iso.replace(/[:.]/g, "-");
+}
+
+/**
+ * Append one record as a JSON line. Best-effort: a disk failure here must
+ * never break gameplay, matching `util/log.ts`'s `emit`.
+ */
+function appendRecord(dir: string, path: string, record: SessionLogRecord): void {
+  try {
+    mkdirSync(dir, { recursive: true });
+    appendFileSync(path, `${JSON.stringify(record)}\n`);
+  } catch {
+    // Never let logging break the app.
+  }
+}
+
+/**
+ * Open a session log, writing its header line straight away so the session is
+ * discoverable (and labelled) even if it ends before a single turn completes.
+ *
+ * The session id is the start timestamp, so two sessions started in the same
+ * millisecond would share a file. A session start is a deliberate user action,
+ * so that is not worth complicating the naming for today — append a random
+ * suffix here if it ever bites.
+ */
+export function startSessionLog(opts: StartSessionLogOptions): SessionLogHandle {
+  const recorder = new SessionRecorder();
+  const startedAt = (opts.clock ?? (() => new Date().toISOString()))();
+  const sessionId = sanitizeForFilename(startedAt);
+  const dir = sessionLogDir(opts.adventureId);
+  const path = sessionLogPath(opts.adventureId, sessionId);
+
+  const header: SessionHeader = {
+    type: "session",
+    startedAt,
+    adventure: opts.adventureId,
+    source: opts.source,
+    provider: opts.provider,
+    saveSlot: opts.saveSlot,
+    resumedFrom: opts.resumedFrom,
+  };
+  appendRecord(dir, path, header);
+
+  return {
+    path,
+    recorder,
+    appendTurn: (record) => appendRecord(dir, path, record),
+  };
+}
+
+export interface SessionLogListing {
+  path: string;
+  file: string;
+  startedAt: string;
+  source: SessionSource | "unknown";
+}
+
+/**
+ * The sessions recorded for an adventure, newest first (the session id is a
+ * timestamp, so a lexical sort is a chronological one).
+ *
+ * Deliberately tolerant: this only builds the sidebar's label, so a log whose
+ * header is truncated or corrupt still gets listed — falling back to its
+ * filename — rather than hiding the file or failing the whole listing. Opening
+ * one is the strict path; see {@link readSessionLog}.
+ */
+export function listSessionLogs(adventureId: string): SessionLogListing[] {
+  const dir = sessionLogDir(adventureId);
+  if (!existsSync(dir)) return [];
+
+  return readdirSync(dir)
+    .filter((f) => f.endsWith(".jsonl"))
+    .sort()
+    .reverse()
+    .map((file) => {
+      const path = join(dir, file);
+      const fallback = file.replace(/\.jsonl$/, "");
+      try {
+        const firstLine = readFileSync(path, "utf8").split("\n", 1)[0] ?? "";
+        const header = JSON.parse(firstLine) as SessionHeader;
+        return { path, file, startedAt: header.startedAt, source: header.source };
+      } catch {
+        return { path, file, startedAt: fallback, source: "unknown" as const };
+      }
+    });
+}
+
+/**
+ * Parse a whole session log for the content pane.
+ *
+ * Unlike {@link listSessionLogs}, this is strict: a missing or corrupt file
+ * throws a message naming the problem, so `DevApp` can show it in the same
+ * inline error banner it already uses for a bad YAML file, rather than
+ * rendering a silently-truncated log as if it were complete.
+ */
+export function readSessionLog(path: string): SessionLogRecord[] {
+  let text: string;
+  try {
+    text = readFileSync(path, "utf8");
+  } catch {
+    throw new Error(`No such session log: ${path}`);
+  }
+
+  return text
+    .split("\n")
+    .filter((line) => line.trim() !== "")
+    .map((line, i) => {
+      try {
+        return JSON.parse(line) as SessionLogRecord;
+      } catch {
+        throw new Error(`Session log is corrupt at line ${i + 1}: ${path}`);
+      }
+    });
+}

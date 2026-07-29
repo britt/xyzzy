@@ -1,20 +1,28 @@
 import { EventEmitter } from "node:events";
 import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { render } from "ink-testing-library";
 import { render as inkRender } from "ink";
 import { DevApp } from "./DevApp.js";
+import { CATEGORIES } from "./dev/entityCatalog.js";
 import type { Adventure } from "../world/schema.js";
 import { FakeNarratorModel, type NarratorModel } from "../llm/NarratorModel.js";
 import { saveGame } from "../engine/save.js";
 import { newGameState } from "../engine/state.js";
 import type { ProviderConfig } from "../config/schema.js";
+import {
+  listSessionLogs,
+  sessionLogPath,
+  startSessionLog,
+} from "../llm/sessionLog.js";
 
 /** Real terminal escape sequences — Ink parses these into `key.upArrow` etc. */
 const UP = "\x1b[A";
 const DOWN = "\x1b[B";
+const RIGHT = "\x1b[C";
+const LEFT = "\x1b[D";
 const ESC = "\x1b";
 const PGUP = "\x1b[5~";
 const PGDN = "\x1b[6~";
@@ -79,7 +87,7 @@ describe("DevApp sidebar", () => {
 
   it("Tab wraps from the last category back to the first", async () => {
     const { lastFrame, stdin, unmount } = mount();
-    for (let i = 0; i < 5; i++) {
+    for (let i = 0; i < CATEGORIES.length; i++) {
       await press(stdin, "\t");
     }
     expect(lastFrame()).toContain("Cave of Echoes"); // back to Config
@@ -88,8 +96,9 @@ describe("DevApp sidebar", () => {
 
   it("Shift+Tab steps backwards, wrapping to the last category", async () => {
     const { lastFrame, stdin, unmount } = mount();
-    await press(stdin, "\x1b[Z"); // Shift+Tab
-    expect(lastFrame()).toContain("A key."); // Items, the last category
+    await press(stdin, "\x1b[Z"); // Shift+Tab wraps to LLM Logs, the last category
+    await press(stdin, "\x1b[Z"); // and steps back again to Items
+    expect(lastFrame()).toContain("A key.");
     unmount();
   });
 
@@ -1054,6 +1063,255 @@ describe("DevApp sidebar divider", () => {
     const { stdout, app } = renderSized(74, 14);
     expect(frameGeometry(stdout).height).toBe(13);
     expect(frameGeometry(stdout).maxWidth).toBeLessThanOrEqual(74);
+    app.unmount();
+  });
+});
+
+describe("DevApp LLM Logs category", () => {
+  // Session logs live under $XDG_STATE_HOME keyed by adventure.meta.id, shared
+  // by every test in this suite — isolate each test's logs from the others'.
+  const savedState = process.env.XDG_STATE_HOME;
+  beforeEach(() => {
+    process.env.XDG_STATE_HOME = mkdtempSync(join(tmpdir(), "xyzzy-devapp-logs-"));
+  });
+  afterEach(() => {
+    if (savedState === undefined) delete process.env.XDG_STATE_HOME;
+    else process.env.XDG_STATE_HOME = savedState;
+  });
+
+  /** Tab from the default Config category round to LLM Logs, the last one. */
+  async function toLogs(stdin: { write: (s: string) => void }) {
+    for (let i = 0; i < CATEGORIES.length - 1; i++) await press(stdin, "\t");
+  }
+
+  function seedLog(startedAt: string) {
+    return startSessionLog({
+      adventureId: adventure.meta.id,
+      source: "dev",
+      provider: { kind: "openai-compatible", model: "a" },
+      saveSlot: "autosave",
+      resumedFrom: null,
+      clock: () => startedAt,
+    });
+  }
+
+  it("shows an empty LLM Logs category when no sessions have run", async () => {
+    const dir = tmpAdventure();
+    const { lastFrame, stdin, unmount } = mountForPlay(dir);
+    await toLogs(stdin);
+    const frame = lastFrame()!;
+    expect(frame).toContain("LLM Logs");
+    // The pane switched to the (empty) logs view rather than staying on Config.
+    expect(frame).not.toContain("Cave of Echoes");
+    unmount();
+  });
+
+  it("lists a session log created by a prior xyzzy dev run", async () => {
+    seedLog("2026-07-28T14-32-07.000Z");
+    const dir = tmpAdventure();
+    const { lastFrame, stdin, unmount } = mountForPlay(dir);
+    await toLogs(stdin);
+    expect(lastFrame()).toContain("2026-07-28T14-32-07.000Z");
+    unmount();
+  });
+
+  it("starting a New Game session creates a log that appears without restarting", async () => {
+    const dir = tmpAdventure();
+    const { lastFrame, stdin, unmount } = mountForPlay(dir);
+    await press(stdin, "p");
+    await press(stdin, "\r"); // New Game
+    await press(stdin, ESC); // back to the sidebar; the session keeps running
+    await toLogs(stdin);
+    expect(listSessionLogs(adventure.meta.id)).toHaveLength(1);
+    expect(lastFrame()).toContain("dev"); // the sidebar row's source label
+    unmount();
+  });
+
+  it("keeps a live play session in the pane while its log is listed in the sidebar", async () => {
+    const dir = tmpAdventure();
+    const { lastFrame, stdin, unmount } = mountForPlay(dir);
+    await press(stdin, "p");
+    await press(stdin, "\r");
+    await press(stdin, ESC);
+    await toLogs(stdin);
+    // A live session owns the content pane for every category, logs included —
+    // browsing away must not tear down the running game.
+    expect(lastFrame()).toContain("A dark cavern.");
+    unmount();
+  });
+
+  it("renders the selected log's content once the session has been quit", async () => {
+    const dir = tmpAdventure();
+    const { lastFrame, stdin, unmount } = mountForPlay(dir);
+    await press(stdin, "p");
+    await press(stdin, "\r");
+    await press(stdin, "/quit");
+    await press(stdin, "\r");
+    await toLogs(stdin);
+    // The session header's fields, rendered through the usual FieldRow pipeline.
+    await expect.poll(() => lastFrame()).toContain("autosave");
+    expect(lastFrame()).toContain("Save slot");
+    unmount();
+  });
+
+  it("shows an inline banner when the selected log cannot be read", async () => {
+    const logDir = dirname(sessionLogPath(adventure.meta.id, "x"));
+    mkdirSync(logDir, { recursive: true });
+    writeFileSync(join(logDir, "broken.jsonl"), '{"type":"session"}\nnot json\n');
+
+    const dir = tmpAdventure();
+    const { lastFrame, stdin, unmount } = mountForPlay(dir);
+    await toLogs(stdin);
+    expect(lastFrame()).toContain("Could not read log");
+    expect(lastFrame()).toContain("line 2");
+    unmount();
+  });
+
+  it("navigates between logs with Up/Down", async () => {
+    seedLog("2026-07-28T10-00-00.000Z");
+    seedLog("2026-07-28T12-00-00.000Z");
+    const dir = tmpAdventure();
+    const { lastFrame, stdin, unmount } = mountForPlay(dir);
+    await toLogs(stdin);
+    // Newest first, so the 12:00 session is selected by default.
+    expect(lastFrame()).toContain("2026-07-28T12-00-00.000Z");
+    await press(stdin, DOWN);
+    await expect.poll(() => lastFrame()).toContain("2026-07-28T10-00-00.000Z");
+    unmount();
+  });
+
+  it("does not offer the Edit hotkey while browsing logs", async () => {
+    const dir = tmpAdventure();
+    const { lastFrame, stdin, unmount } = mountForPlay(dir);
+    await toLogs(stdin);
+    expect(lastFrame()).not.toContain("Edit");
+    unmount();
+  });
+
+  it("pressing e while browsing logs does nothing", async () => {
+    const dir = tmpAdventure();
+    seedLog("2026-07-28T14-32-07.000Z");
+    const opened: string[] = [];
+    const { stdin, unmount } = render(
+      <DevApp adventure={adventure} adventureDir={dir} openEditor={(p) => opened.push(p)} />,
+    );
+    await toLogs(stdin);
+    await press(stdin, "e");
+    expect(opened).toEqual([]);
+    unmount();
+  });
+});
+
+describe("DevApp LLM Logs navigation", () => {
+  const savedState = process.env.XDG_STATE_HOME;
+  beforeEach(() => {
+    process.env.XDG_STATE_HOME = mkdtempSync(join(tmpdir(), "xyzzy-devapp-lognav-"));
+  });
+  afterEach(() => {
+    if (savedState === undefined) delete process.env.XDG_STATE_HOME;
+    else process.env.XDG_STATE_HOME = savedState;
+  });
+
+  /**
+   * A log long enough to overflow a short pane, so scrolling has somewhere to
+   * go. The save slot is the marker: it appears near the top of the content
+   * pane and, unlike the timestamp and source, is not part of the sidebar
+   * label — so asserting on it can only be satisfied by the content pane.
+   */
+  function seedLongLog(startedAt: string, saveSlot: string) {
+    const handle = startSessionLog({
+      adventureId: adventure.meta.id,
+      source: "dev",
+      provider: { kind: "openai-compatible", model: "a" },
+      saveSlot,
+      resumedFrom: null,
+      clock: () => startedAt,
+    });
+    for (let turn = 1; turn <= 6; turn++) {
+      handle.appendTurn(handle.recorder.flushTurn(turn, `INPUT-${turn}`));
+    }
+  }
+
+  async function toLogsSized(stdin: TtyStdin) {
+    for (let i = 0; i < CATEGORIES.length - 1; i++) await press(stdin, "\t");
+  }
+
+  it("scrolls the log with Down rather than selecting another session", async () => {
+    seedLongLog("2026-07-28T12-00-00.000Z", "autosave");
+    const { stdout, stdin, app } = renderSized(74, 14);
+    await toLogsSized(stdin);
+    await expect.poll(() => frameText(stdout)).toContain("Save slot");
+
+    for (let i = 0; i < 12; i++) await press(stdin, DOWN);
+    // Scrolled past the header rather than jumping to another session.
+    await expect.poll(() => frameText(stdout)).not.toContain("Save slot");
+    expect(frameText(stdout)).toContain("Turn");
+    app.unmount();
+  });
+
+  it("Up scrolls back toward the top of the log", async () => {
+    seedLongLog("2026-07-28T12-00-00.000Z", "autosave");
+    const { stdout, stdin, app } = renderSized(74, 14);
+    await toLogsSized(stdin);
+    for (let i = 0; i < 12; i++) await press(stdin, DOWN);
+    await expect.poll(() => frameText(stdout)).not.toContain("Save slot");
+
+    for (let i = 0; i < 15; i++) await press(stdin, UP);
+    await expect.poll(() => frameText(stdout)).toContain("Save slot");
+    app.unmount();
+  });
+
+  it("Right and Left move between sessions", async () => {
+    seedLongLog("2026-07-28T10-00-00.000Z", "older-slot");
+    seedLongLog("2026-07-28T12-00-00.000Z", "newer-slot");
+    const { stdout, stdin, app } = renderSized(74, 14);
+    await toLogsSized(stdin);
+    // Newest first, so the 12:00 session is selected by default.
+    await expect.poll(() => frameText(stdout)).toContain("newer-slot");
+
+    await press(stdin, RIGHT);
+    await expect.poll(() => frameText(stdout)).toContain("older-slot");
+
+    await press(stdin, LEFT);
+    await expect.poll(() => frameText(stdout)).toContain("newer-slot");
+    app.unmount();
+  });
+
+  it("clamps session selection at both ends", async () => {
+    seedLongLog("2026-07-28T10-00-00.000Z", "older-slot");
+    seedLongLog("2026-07-28T12-00-00.000Z", "newer-slot");
+    const { stdout, stdin, app } = renderSized(74, 14);
+    await toLogsSized(stdin);
+    await press(stdin, LEFT); // already at the newest
+    await expect.poll(() => frameText(stdout)).toContain("newer-slot");
+    await press(stdin, RIGHT);
+    await press(stdin, RIGHT); // already at the oldest
+    await expect.poll(() => frameText(stdout)).toContain("older-slot");
+    app.unmount();
+  });
+
+  it("selecting another session returns to the top of the log", async () => {
+    seedLongLog("2026-07-28T10-00-00.000Z", "older-slot");
+    seedLongLog("2026-07-28T12-00-00.000Z", "newer-slot");
+    const { stdout, stdin, app } = renderSized(74, 14);
+    await toLogsSized(stdin);
+    for (let i = 0; i < 12; i++) await press(stdin, DOWN); // scroll away from the top
+    await expect.poll(() => frameText(stdout)).not.toContain("Save slot");
+
+    await press(stdin, RIGHT);
+    await expect.poll(() => frameText(stdout)).toContain("older-slot");
+    app.unmount();
+  });
+
+  it("leaves Left and Right inert in an entity category", async () => {
+    const { stdout, stdin, app } = renderSized(74, 14);
+    await press(stdin, "\t");
+    await press(stdin, "\t");
+    await press(stdin, "\t"); // -> Rooms, Cavern selected
+    await expect.poll(() => frameText(stdout)).toContain("A dark cavern.");
+    await press(stdin, RIGHT);
+    await press(stdin, LEFT);
+    expect(frameText(stdout)).toContain("A dark cavern.");
     app.unmount();
   });
 });
