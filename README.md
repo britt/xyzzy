@@ -58,7 +58,9 @@ You'll also need a local model server running (for example
 
 ## Usage
 
-xyzzy is a single CLI with four commands.
+xyzzy is a single CLI: `new` (plus `new room|item|character|beat`), `play`,
+`dev`, `validate`, `map`, and `config` (plus its `list|add|use|test|models`
+subcommands).
 
 ### Create an adventure
 
@@ -121,8 +123,11 @@ bottom. Type commands in plain language. In-game meta commands:
 | `/load [slot]` | Load a saved game.                       |
 | `/model`       | Show or switch the model (`/model list`, `/model <id>`). |
 | `/provider`    | Show or switch the provider (`/provider list\|use\|url`). |
+| `/map`         | Draw an ASCII map of rooms, connections, and who's where. |
 | `/state`       | Dump the current game state (debugging). |
+| `/transcript`  | Print the full conversation transcript.  |
 | `/log`         | Show the log file path.                  |
+| `/timing [on\|off]` | Toggle turn/LLM-call timing display. |
 | `/help`        | Show meta commands.                      |
 | `/quit`        | Exit.                                    |
 
@@ -258,12 +263,26 @@ Checks the adventure against the schema and reports errors with the exact path
 cross-reference checks that exits and locations point to real ids. Exits
 non-zero on failure, so it works in CI.
 
+### Map
+
+```bash
+xyzzy map my-adventure
+```
+
+Computes the room layout from the adventure's authored rooms and exits and
+writes it to `map.yaml` beside `adventure.yaml` — a static cartography
+artifact (each room's grid position plus its exits) that also embeds an
+`ascii` rendering, the same one `/map` shows in-game, seeded with the
+adventure's starting state. Useful for reviewing the layout without loading
+the game.
+
 ### Configure providers
 
 ```bash
-xyzzy config list          # show configured providers (the default is marked *)
-xyzzy config use <name>    # set the default provider
-xyzzy config test [name]   # ping a provider's endpoint (defaults to the default)
+xyzzy config list           # show configured providers (the default is marked *)
+xyzzy config use <name>     # set the default provider
+xyzzy config test [name]    # ping a provider's endpoint (defaults to the default)
+xyzzy config models [name]  # list the models the provider's endpoint reports
 
 # add (or replace) a named provider:
 xyzzy config add <name> --model <model> [--kind <kind>] \
@@ -276,20 +295,35 @@ becomes the default. For example:
 
 ```bash
 xyzzy config add local  --model llama3.1 --base-url http://localhost:11434/v1
-xyzzy config add cloud  --kind openai --model gpt-4o --api-key-env OPENAI_API_KEY
+xyzzy config add cloud  --model gpt-4o --base-url https://api.openai.com/v1 --api-key-env OPENAI_API_KEY
 ```
 
-Global provider settings live in `~/.config/xyzzy/config.json`. An adventure can
-override the model/provider with its own `xyzzy.config.json`. API keys for cloud
-providers are read from the environment (via `--api-key-env`) and never written
-to disk. Resolution order: `--provider` flag → adventure config → global default.
+`lmstudio`, `ollama`, `openai`, and `anthropic` are also accepted as `--kind`
+values. `lmstudio`/`ollama` behave identically to `openai-compatible` (same
+code path, different label in `xyzzy config list`). `openai`/`anthropic` are
+reserved for a future native cloud SDK integration and currently fail at play
+time with an error telling you to use an `openai-compatible` endpoint
+instead — any OpenAI-compatible cloud API (like `api.openai.com` above) works
+today via `--kind openai-compatible`.
+
+Global provider settings live under `$XDG_CONFIG_HOME/xyzzy/config.json`
+(default `~/.config/xyzzy/config.json`). An adventure can override the
+model/provider with its own `xyzzy.config.json`. API keys for cloud providers
+are read from the environment (via `--api-key-env`) and never written to disk.
+Resolution order: `--provider` flag → adventure config → global default.
 
 ## Documentation
 
 - **[Data Model](docs/data-model.md)** — full reference for adventures, game
   state, characters, and actions.
-- **[Design](docs/plans/2026-07-13-xyzzy-design.md)** — architecture and design
-  decisions.
+- **[Design](docs/plans/2026-07-13-xyzzy-design.md)** — original architecture
+  and design decisions. Later features have their own design docs under
+  [`docs/plans/`](docs/plans/), including
+  [structured action detection](docs/plans/2026-07-16-action-detection-design.md),
+  [character beats and interactions](docs/plans/2026-07-20-character-beats-design.md),
+  [turn/LLM-call timing](docs/plans/2026-07-21-turn-timing-design.md),
+  [the `xyzzy dev` TUI](docs/plans/2026-07-27-dev-tool-tui-design.md), and
+  [the LLM debugging view](docs/plans/2026-07-28-llm-debug-log-design.md).
 
 ## Tech stack
 

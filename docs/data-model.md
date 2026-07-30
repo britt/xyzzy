@@ -172,8 +172,12 @@ count is never incremented past the limit and effects don't reapply.
 
 ## GameState
 
-A running save. Separate from the adventure and independently versioned. Written
-atomically to `<adventure>/saves/<slot>.json` (autosaved each turn).
+A running save. Separate from the adventure and independently versioned. Saves
+are global, not part of the adventure directory, so they survive
+moving/reinstalling the adventure: written atomically to
+`$XDG_STATE_HOME/xyzzy/<adventure id>/saves/<slot>.json` (default
+`~/.local/state/xyzzy/<adventure id>/saves/<slot>.json`), keyed by the
+adventure's `meta.id` and autosaved each turn. See `engine/save.ts`.
 
 ```
 GameState
