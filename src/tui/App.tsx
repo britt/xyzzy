@@ -73,6 +73,13 @@ export interface AppProps {
    * supplied by `DevApp`.
    */
   sessionLog?: SessionLogHandle;
+  /**
+   * Called with the new `GameState` every time it changes (a completed turn,
+   * `/load`). Lets an embedding parent (e.g. `DevApp`'s game-state inspector)
+   * mirror the live state without owning it — this component remains the
+   * sole owner of `state` itself.
+   */
+  onStateChange?: (state: GameState) => void;
 }
 
 /**
@@ -206,9 +213,16 @@ export function App({
   scrollbackMode = "native",
   scrollbackViewport,
   sessionLog,
+  onStateChange,
 }: AppProps) {
   const { exit } = useApp();
   const [state, setState] = useState(initialState);
+
+  /** Update the live state and mirror it out to an embedding parent, if any. */
+  function updateState(next: GameState) {
+    setState(next);
+    onStateChange?.(next);
+  }
   const [provider, setProvider] = useState(initialProvider);
   const [{ model, modelError }, setModelState] = useState(() => {
     const built = buildModel(makeModel, initialProvider);
@@ -399,7 +413,7 @@ export function App({
           return true;
         }
         const loaded = await loadGame(adventure.meta.id, arg);
-        setState(loaded);
+        updateState(loaded);
         push("system", `Loaded slot "${arg}".`);
         return true;
       }
@@ -444,7 +458,7 @@ export function App({
     try {
       const result = await runTurn({ adventure, model, detector }, state, value);
       const totalMs = Date.now() - turnStart;
-      setState(result.state);
+      updateState(result.state);
       setLastTiming({ ...result.timing, totalMs });
       log.info("turn timing", {
         turn: attemptedTurn,

@@ -95,6 +95,28 @@ describe("hotKeysFor content scrolling", () => {
   });
 });
 
+describe("hotKeysFor while a session is live", () => {
+  it("omits Edit on the config category once a session is live", () => {
+    const ctx = { ...sidebar, hasLiveSession: true };
+    expect(keys(ctx)).not.toContain("e");
+  });
+
+  it("omits Edit on an entity category once a session is live", () => {
+    const ctx = { ...sidebar, isConfigCategory: false, entryCount: 3, hasLiveSession: true };
+    expect(keys(ctx)).not.toContain("e");
+  });
+
+  it("still offers entity navigation while a session is live — only editing is disabled", () => {
+    const ctx = { ...sidebar, isConfigCategory: false, entryCount: 3, hasLiveSession: true };
+    expect(keys(ctx)).toContain("↑↓");
+  });
+
+  it("restores Edit once the session ends", () => {
+    const ctx = { ...sidebar, hasLiveSession: false };
+    expect(keys(ctx)).toContain("e");
+  });
+});
+
 describe("hotKeysFor logs category", () => {
   const logs: HotKeyContext = {
     ...sidebar,

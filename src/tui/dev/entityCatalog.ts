@@ -3,6 +3,7 @@ import type { EntityKind } from "../../world/entityWriter.js";
 
 export type Category =
   | "config"
+  | "gamestate"
   | "beats"
   | "characters"
   | "rooms"
@@ -12,6 +13,7 @@ export type Category =
 /** Fixed sidebar order, per the design doc. */
 export const CATEGORIES: readonly Category[] = [
   "config",
+  "gamestate",
   "beats",
   "characters",
   "rooms",
@@ -21,6 +23,7 @@ export const CATEGORIES: readonly Category[] = [
 
 export const CATEGORY_LABELS: Record<Category, string> = {
   config: "Adventure Config",
+  gamestate: "Game State",
   beats: "Beats",
   characters: "Characters",
   rooms: "Rooms",
@@ -39,8 +42,9 @@ export interface CatalogEntry {
  * List a category's entities in the adventure's own definition order
  * (inline `adventure.yaml` entries first, then conventional-directory
  * files — whatever order `loadAdventure` already produced). Returns `[]`
- * for the `config` and `logs` categories, which have no entity list of their
- * own — `logs` is a listing of session files, sourced separately by `DevApp`.
+ * for the `config`, `gamestate`, and `logs` categories, which have no entity
+ * list of their own — `logs` is a listing of session files and `gamestate`
+ * inspects the whole `GameState` directly, both sourced separately by `DevApp`.
  */
 export function entriesForCategory(
   adventure: Adventure,
@@ -48,6 +52,7 @@ export function entriesForCategory(
 ): CatalogEntry[] {
   switch (category) {
     case "config":
+    case "gamestate":
     case "logs":
       return [];
     case "beats":

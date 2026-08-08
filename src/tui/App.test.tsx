@@ -8,7 +8,7 @@ import { newGameState } from "../engine/state.js";
 import { saveExists, saveGame } from "../engine/save.js";
 import { FakeNarratorModel, type NarratorModel } from "../llm/NarratorModel.js";
 import { FakeDetector, type Detector } from "../llm/Detector.js";
-import type { Adventure } from "../world/schema.js";
+import type { Adventure, GameState } from "../world/schema.js";
 import type { ProviderConfig } from "../config/schema.js";
 import { logPath } from "../util/log.js";
 import {
@@ -61,6 +61,7 @@ function mount(
     scrollbackMode?: "native" | "bounded";
     scrollbackViewport?: { rows: number; width: number };
     sessionLog?: SessionLogHandle;
+    onStateChange?: (state: GameState) => void;
   } = {},
 ) {
   return render(
@@ -78,6 +79,7 @@ function mount(
       scrollbackMode={extra.scrollbackMode}
       scrollbackViewport={extra.scrollbackViewport}
       sessionLog={extra.sessionLog}
+      onStateChange={extra.onStateChange}
     />,
   );
 }
@@ -699,6 +701,55 @@ describe("embeddability", () => {
     await type(stdin, "/help");
 
     await expect.poll(() => lastFrame()).toContain("/quit");
+    unmount();
+  });
+});
+
+describe("onStateChange", () => {
+  it("is not called when omitted", async () => {
+    const model = new FakeNarratorModel([{ narration: "Hi.", actions: [] }]);
+    const { stdin, unmount } = mount(model);
+    await type(stdin, "look");
+    unmount(); // no onStateChange to have thrown if it were wrongly invoked
+  });
+
+  it("reports the updated state after a successful turn", async () => {
+    const seen: GameState[] = [];
+    const model = new FakeNarratorModel([{ narration: "You look around.", actions: [] }]);
+    const { stdin, unmount } = mount(model, undefined, undefined, undefined, undefined, {
+      onStateChange: (s) => seen.push(s),
+    });
+
+    await type(stdin, "look");
+    await expect.poll(() => seen.length).toBe(1);
+    expect(seen[0]!.turn).toBe(1);
+    unmount();
+  });
+
+  it("does not report a state change after a failed turn (state is rolled back)", async () => {
+    const seen: GameState[] = [];
+    const failing: NarratorModel = { generate: () => Promise.reject(new Error("boom")) };
+    const { lastFrame, stdin, unmount } = mount(failing, undefined, undefined, undefined, undefined, {
+      onStateChange: (s) => seen.push(s),
+    });
+
+    await type(stdin, "look");
+    await expect.poll(() => lastFrame()).toContain("boom");
+    expect(seen).toEqual([]);
+    unmount();
+  });
+
+  it("reports the loaded state after /load", async () => {
+    const seen: GameState[] = [];
+    const loaded = { ...newGameState(adventure, "now"), turn: 7 };
+    await saveGame(adventure.meta.id, "before-boss", loaded);
+    const { stdin, unmount } = mount(undefined, undefined, undefined, undefined, undefined, {
+      onStateChange: (s) => seen.push(s),
+    });
+
+    await type(stdin, "/load before-boss");
+    await expect.poll(() => seen.length).toBe(1);
+    expect(seen[0]!.turn).toBe(7);
     unmount();
   });
 });

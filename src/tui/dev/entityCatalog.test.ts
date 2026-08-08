@@ -18,12 +18,17 @@ describe("CATEGORIES", () => {
   it("lists categories in the required order", () => {
     expect(CATEGORIES).toEqual([
       "config",
+      "gamestate",
       "beats",
       "characters",
       "rooms",
       "items",
       "logs",
     ]);
+  });
+
+  it("puts Game State directly below Adventure Config", () => {
+    expect(CATEGORIES.indexOf("gamestate")).toBe(CATEGORIES.indexOf("config") + 1);
   });
 
   it("has a display label for every category", () => {
@@ -37,6 +42,10 @@ describe("CATEGORIES", () => {
   it("labels the logs category 'LLM Logs'", () => {
     expect(CATEGORY_LABELS.logs).toBe("LLM Logs");
   });
+
+  it("labels the gamestate category 'Game State'", () => {
+    expect(CATEGORY_LABELS.gamestate).toBe("Game State");
+  });
 });
 
 describe("entriesForCategory", () => {
@@ -46,6 +55,10 @@ describe("entriesForCategory", () => {
 
   it("returns no entries for the logs category (DevApp sources these separately)", () => {
     expect(entriesForCategory(adventure, "logs")).toEqual([]);
+  });
+
+  it("returns no entries for the gamestate category (DevApp inspects the whole GameState directly)", () => {
+    expect(entriesForCategory(adventure, "gamestate")).toEqual([]);
   });
 
   it("lists rooms with kind, id, and name as the label", () => {

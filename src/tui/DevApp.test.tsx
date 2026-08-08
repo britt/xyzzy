@@ -70,9 +70,14 @@ describe("DevApp sidebar", () => {
   it("lists categories in order", () => {
     const { lastFrame, unmount } = mount();
     const frame = lastFrame()!;
-    const order = ["Adventure Config", "Beats", "Characters", "Rooms", "Items"].map((c) =>
-      frame.indexOf(c),
-    );
+    const order = [
+      "Adventure Config",
+      "Game State",
+      "Beats",
+      "Characters",
+      "Rooms",
+      "Items",
+    ].map((c) => frame.indexOf(c));
     expect(order.every((i) => i >= 0)).toBe(true);
     expect(order).toEqual([...order].sort((a, b) => a - b));
     unmount();
@@ -80,7 +85,8 @@ describe("DevApp sidebar", () => {
 
   it("Tab switches to the next category and shows its entity list", async () => {
     const { lastFrame, stdin, unmount } = mount();
-    await press(stdin, "\t");
+    await press(stdin, "\t"); // -> Game State
+    await press(stdin, "\t"); // -> Beats
     expect(lastFrame()).toContain("won-the-key"); // Beats category
     unmount();
   });
@@ -104,6 +110,7 @@ describe("DevApp sidebar", () => {
 
   it("selecting an entity with Down shows its fields in the content pane", async () => {
     const { lastFrame, stdin, unmount } = mount();
+    await press(stdin, "\t"); // -> Game State
     await press(stdin, "\t"); // -> Beats
     await press(stdin, "\t"); // -> Characters
     expect(lastFrame()).toContain("Hermit");
@@ -113,8 +120,8 @@ describe("DevApp sidebar", () => {
 
   it("navigates entities within a category with Up/Down and updates the content pane", async () => {
     const { lastFrame, stdin, unmount } = mount();
-    // Rooms is the 4th category: Config(0) -> Beats -> Characters -> Rooms
-    for (let i = 0; i < 3; i++) {
+    // Rooms is the 5th category: Config(0) -> Game State -> Beats -> Characters -> Rooms
+    for (let i = 0; i < 4; i++) {
       await press(stdin, "\t");
     }
     expect(lastFrame()).toContain("A dark cavern."); // first room selected by default
@@ -127,7 +134,7 @@ describe("DevApp sidebar", () => {
 
   it("clamps Up/Down at the ends of the entity list", async () => {
     const { lastFrame, stdin, unmount } = mount();
-    for (let i = 0; i < 3; i++) {
+    for (let i = 0; i < 4; i++) {
       await press(stdin, "\t"); // -> Rooms
     }
     await press(stdin, UP); // already at the first entry
@@ -140,7 +147,7 @@ describe("DevApp sidebar", () => {
 
   it("remembers each category's selection when you tab away and back", async () => {
     const { lastFrame, stdin, unmount } = mount();
-    for (let i = 0; i < 3; i++) {
+    for (let i = 0; i < 4; i++) {
       await press(stdin, "\t"); // -> Rooms
     }
     await press(stdin, DOWN); // select Hall
@@ -155,6 +162,7 @@ describe("DevApp sidebar", () => {
     const empty: Adventure = { meta: adventure.meta, premise: "p", start: {} };
     const { lastFrame, stdin, unmount } = mount(empty);
     expect(lastFrame()).toBeTruthy();
+    await press(stdin, "\t"); // -> Game State, which has no entries
     await press(stdin, "\t"); // -> Beats, which has no entries
     await press(stdin, DOWN); // no-op, must not crash
     expect(lastFrame()).toContain("Beats");
@@ -216,7 +224,7 @@ function mountForPlay(dir: string, model: NarratorModel = new FakeNarratorModel(
 
 /** Tab from the default Config category over to Rooms, selecting Cavern. */
 async function toRooms(stdin: { write: (s: string) => void }) {
-  for (let i = 0; i < 3; i++) await press(stdin, "\t");
+  for (let i = 0; i < 4; i++) await press(stdin, "\t");
 }
 
 describe("DevApp editing", () => {
@@ -419,6 +427,7 @@ describe("DevApp editing", () => {
         openEditor={(path) => opened.push(path)}
       />,
     );
+    await press(stdin, "\t"); // -> Game State, which has no entries
     await press(stdin, "\t"); // -> Beats, which has no entries
     await press(stdin, "e");
     expect(opened).toEqual([]);
@@ -519,7 +528,8 @@ describe("DevApp play-focus mode", () => {
 
     await press(stdin, ESC);
     // Sidebar navigation (Tab) works again -> Beats category visible.
-    await press(stdin, "\t");
+    await press(stdin, "\t"); // -> Game State
+    await press(stdin, "\t"); // -> Beats
     expect(lastFrame()).toContain("won-the-key");
     unmount();
   });
@@ -554,7 +564,8 @@ describe("DevApp play-focus mode", () => {
     await press(stdin, "\r");
 
     // The sidebar owns the keyboard again.
-    await press(stdin, "\t");
+    await press(stdin, "\t"); // -> Game State
+    await press(stdin, "\t"); // -> Beats
     expect(lastFrame()).toContain("won-the-key");
     unmount();
   });
@@ -593,7 +604,8 @@ describe("DevApp play-focus mode", () => {
 
     // The tool is still running — Escape and sidebar navigation still work.
     await press(stdin, ESC);
-    await press(stdin, "\t");
+    await press(stdin, "\t"); // -> Game State
+    await press(stdin, "\t"); // -> Beats
     expect(lastFrame()).toContain("won-the-key");
     unmount();
   });
@@ -610,6 +622,188 @@ describe("DevApp play-focus mode", () => {
 
     // Back to the sidebar/content pane (Adventure Config, the default selection).
     await expect.poll(() => lastFrame()).toContain("Cave of Echoes");
+    unmount();
+  });
+});
+
+describe("DevApp Game State category", () => {
+  const savedState = process.env.XDG_STATE_HOME;
+  beforeEach(() => {
+    process.env.XDG_STATE_HOME = mkdtempSync(join(tmpdir(), "xyzzy-devapp-gamestate-"));
+  });
+  afterEach(() => {
+    if (savedState === undefined) delete process.env.XDG_STATE_HOME;
+    else process.env.XDG_STATE_HOME = savedState;
+  });
+
+  it("shows a placeholder when no session is running", async () => {
+    const { lastFrame, stdin, unmount } = mount();
+    await press(stdin, "\t"); // -> Game State
+    expect(lastFrame()).toContain("no session running");
+    unmount();
+  });
+
+  it("shows the live location and turn once a session starts", async () => {
+    const dir = tmpAdventure();
+    const { lastFrame, stdin, unmount } = mountForPlay(dir);
+    await press(stdin, "p");
+    await press(stdin, "\r");
+    await press(stdin, ESC);
+    await press(stdin, "\t"); // -> Game State
+    const frame = lastFrame()!;
+    // The heading's own "turn 0" subtitle line, distinguished from the play
+    // status bar's "Cave of Echoes · Cavern · turn 0" (which also ends in
+    // "turn 0"), plus "Inventory"/"Flags" which only the inspector renders.
+    const turnLine = frame
+      .split("\n")
+      .find((l) => l.trimEnd().endsWith("turn 0") && !l.includes("Cave of Echoes"));
+    expect(turnLine).toBeDefined();
+    expect(frame).toContain("Inventory");
+    expect(frame).toContain("Flags");
+    unmount();
+  });
+
+  it("updates as turns are taken", async () => {
+    const dir = tmpAdventure();
+    const model = new FakeNarratorModel([{ narration: "You look around.", actions: [] }]);
+    const { lastFrame, stdin, unmount } = mountForPlay(dir, model);
+    await press(stdin, "p");
+    await press(stdin, "\r");
+    await press(stdin, "look");
+    await press(stdin, "\r");
+    await expect.poll(() => lastFrame()).toContain("You look around.");
+
+    await press(stdin, ESC);
+    await press(stdin, "\t"); // -> Game State
+    await expect
+      .poll(() =>
+        lastFrame()!
+          .split("\n")
+          .some((l) => l.trimEnd().endsWith("turn 1") && !l.includes("Cave of Echoes")),
+      )
+      .toBe(true);
+    unmount();
+  });
+});
+
+describe("DevApp runtime inspector while a session is live", () => {
+  const savedState = process.env.XDG_STATE_HOME;
+  beforeEach(() => {
+    process.env.XDG_STATE_HOME = mkdtempSync(join(tmpdir(), "xyzzy-devapp-inspector-"));
+  });
+  afterEach(() => {
+    if (savedState === undefined) delete process.env.XDG_STATE_HOME;
+    else process.env.XDG_STATE_HOME = savedState;
+  });
+
+  async function startAndBrowse(stdin: { write: (s: string) => void }) {
+    await press(stdin, "p");
+    await press(stdin, "\r");
+    await press(stdin, ESC);
+  }
+
+  it("shows the log-read error banner inside the inspector panel", async () => {
+    const logDir = dirname(sessionLogPath(adventure.meta.id, "x"));
+    mkdirSync(logDir, { recursive: true });
+    writeFileSync(join(logDir, "broken.jsonl"), '{"type":"session"}\nnot json\n');
+
+    const dir = tmpAdventure();
+    const { lastFrame, stdin, unmount } = mountForPlay(dir);
+    await startAndBrowse(stdin);
+    for (let i = 0; i < CATEGORIES.length - 1; i++) await press(stdin, "\t"); // -> LLM Logs
+    const frame = lastFrame()!;
+    expect(frame).toContain("Could not read log");
+    expect(frame).toContain("A dark cavern."); // gameplay panel still visible above it
+    unmount();
+  });
+
+  it("shows a room's runtime state instead of its authored description", async () => {
+    const dir = tmpAdventure();
+    const { lastFrame, stdin, unmount } = mountForPlay(dir);
+    await startAndBrowse(stdin);
+    await toRooms(stdin);
+    const frame = lastFrame()!;
+    expect(frame).toContain("Player here");
+    expect(frame).not.toContain("Description");
+    unmount();
+  });
+
+  it("reports the player is in the room they actually started in", async () => {
+    const dir = tmpAdventure();
+    const { lastFrame, stdin, unmount } = mountForPlay(dir);
+    await startAndBrowse(stdin);
+    await toRooms(stdin); // first room is "cavern", the adventure's start room
+    const frame = lastFrame()!;
+    const line = frame.split("\n").find((l) => l.includes("Player here"))!;
+    expect(line).toContain("yes");
+    unmount();
+  });
+
+  it("keeps the live gameplay panel visible above the inspector", async () => {
+    const dir = tmpAdventure();
+    const { lastFrame, stdin, unmount } = mountForPlay(dir);
+    await startAndBrowse(stdin);
+    await toRooms(stdin);
+    const frame = lastFrame()!;
+    expect(frame).toContain("A dark cavern."); // gameplay's seeded narration
+    expect(frame).toContain("Player here"); // the inspector, at the same time
+    unmount();
+  });
+
+  it("collapses the inspector back to full-pane gameplay once play is refocused", async () => {
+    const dir = tmpAdventure();
+    const { lastFrame, stdin, unmount } = mountForPlay(dir);
+    await startAndBrowse(stdin);
+    await toRooms(stdin);
+    expect(lastFrame()).toContain("Player here");
+
+    await press(stdin, "p"); // refocus play
+    expect(lastFrame()).not.toContain("Player here");
+    unmount();
+  });
+
+  it("restores the inspector when returning to the sidebar with Escape", async () => {
+    const dir = tmpAdventure();
+    const { lastFrame, stdin, unmount } = mountForPlay(dir);
+    await startAndBrowse(stdin);
+    await toRooms(stdin);
+    await press(stdin, "p");
+    expect(lastFrame()).not.toContain("Player here");
+
+    await press(stdin, ESC);
+    expect(lastFrame()).toContain("Player here");
+    unmount();
+  });
+
+  it("omits Edit from the footer and ignores e once a session starts", async () => {
+    const dir = tmpAdventure();
+    const opened: string[] = [];
+    const { lastFrame, stdin, unmount } = render(
+      <DevApp
+        adventure={adventure}
+        adventureDir={dir}
+        openEditor={(p) => opened.push(p)}
+        provider={provider}
+        makeModel={() => new FakeNarratorModel()}
+        listModels={async () => []}
+        providers={{}}
+      />,
+    );
+    await startAndBrowse(stdin);
+    expect(lastFrame()).not.toContain("Edit");
+    await press(stdin, "e");
+    expect(opened).toEqual([]);
+    unmount();
+  });
+
+  it("restores Edit once the session is quit", async () => {
+    const dir = tmpAdventure();
+    const { lastFrame, stdin, unmount } = mountForPlay(dir);
+    await press(stdin, "p");
+    await press(stdin, "\r");
+    await press(stdin, "/quit");
+    await press(stdin, "\r");
+    expect(lastFrame()).toContain("Edit");
     unmount();
   });
 });
@@ -832,6 +1026,7 @@ describe("DevApp hot-key footer", () => {
     const { lastFrame, stdin, unmount } = render(
       <DevApp adventure={empty} adventureDir="/tmp/does-not-matter" />,
     );
+    await press(stdin, "\t"); // -> Game State, which has no entries
     await press(stdin, "\t"); // -> Beats, which has no entries
     const frame = lastFrame()!;
     expect(frame).not.toContain("Entity");
@@ -913,6 +1108,7 @@ const frameText = (stdout: SizedStdout) =>
  * frame straight after a keypress can still show the previous screen.
  */
 async function toCharacters(stdin: TtyStdin, stdout: SizedStdout) {
+  await press(stdin, "\t");
   await press(stdin, "\t");
   await press(stdin, "\t");
   // The lowercase id is the heading subtitle, unique to the content pane.
@@ -1305,6 +1501,7 @@ describe("DevApp LLM Logs navigation", () => {
 
   it("leaves Left and Right inert in an entity category", async () => {
     const { stdout, stdin, app } = renderSized(74, 14);
+    await press(stdin, "\t");
     await press(stdin, "\t");
     await press(stdin, "\t");
     await press(stdin, "\t"); // -> Rooms, Cavern selected

@@ -84,3 +84,42 @@ export function playViewport(
   if (width === undefined || height === undefined) return undefined;
   return { rows: Math.max(1, height - PLAY_CHROME_ROWS), width };
 }
+
+/** Row the divider between the play and inspector panels occupies. */
+export const SPLIT_DIVIDER_ROWS = 1;
+
+export interface SplitLayout {
+  playRows: number;
+  inspectorRows: number;
+}
+
+/**
+ * Divide the content pane between the live play panel (top) and the
+ * game-state inspector (bottom), for when a session is live but play doesn't
+ * have focus. Roughly even, but play keeps at least its own chrome's worth of
+ * rows even on a short terminal, so it never renders as less than usable.
+ * Undefined when the terminal size is unknown, same as `playViewport`.
+ */
+export function splitContentPane(layout: DevLayout): SplitLayout | undefined {
+  const height = contentPaneHeight(layout);
+  if (height === undefined) return undefined;
+
+  const usable = Math.max(2, height - SPLIT_DIVIDER_ROWS);
+  const playRows = Math.max(1, Math.min(usable - 1, Math.max(PLAY_CHROME_ROWS, Math.ceil(usable / 2))));
+  const inspectorRows = Math.max(1, usable - playRows);
+  return { playRows, inspectorRows };
+}
+
+/**
+ * The play panel's own viewport once split with the inspector: its share of
+ * rows from `splitContentPane`, less its status-bar/input chrome, at the
+ * content pane's full width. Undefined when the terminal size is unknown.
+ */
+export function splitPlayViewport(
+  layout: DevLayout,
+  split: SplitLayout,
+): { rows: number; width: number } | undefined {
+  const width = contentPaneWidth(layout);
+  if (width === undefined) return undefined;
+  return { rows: Math.max(1, split.playRows - PLAY_CHROME_ROWS), width };
+}
