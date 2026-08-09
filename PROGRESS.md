@@ -690,3 +690,85 @@ test and the shipped Scenario 10 reflect this.
 - Build: ✅ Successful (`bun run build`, zero errors).
 - Linting: ✅ Clean (`eslint .`, zero errors/warnings).
 - Completed: 2026-07-29
+
+## Task: Issue 21 — game-state inspection while playing in `xyzzy dev` - COMPLETE
+
+- Started: 2026-08-08
+- Plan: `docs/plans/2026-08-08-issue-21-gamestate-inspector-plan.md`
+- Built a runtime inspector for `xyzzy dev`'s sidebar, mirroring the design in
+  issue #21: while a play session is live, selecting an entity shows its
+  *runtime* state (from the running `GameState`) instead of its authored
+  definition, editing is unreachable, and the content pane splits into a
+  gameplay panel (top) and an inspector panel (bottom) whenever play doesn't
+  have focus.
+- `src/tui/dev/entityCatalog.ts` + test: RED — new tests asserting a
+  `"gamestate"` category directly below `"config"`, labelled "Game State",
+  with no entity list of its own. GREEN — extended the `Category` union,
+  `CATEGORIES`, `CATEGORY_LABELS`, and `entriesForCategory`'s switch.
+- `src/tui/dev/inspectFields.ts` + test (new file): RED — 16 tests across
+  `inspectGameStateFields`, `inspectRoomFields`, `inspectCharacterFields`,
+  `inspectBeatFields`, `inspectItemFields`, and the `inspectFieldsFor`
+  dispatcher, covering the placeholder-when-idle case and every runtime field
+  called for in the issue (player-here, characters/items in a room, live vs.
+  authored character location contrast, fired beats via `state["beat:<id>"]`,
+  interaction counts via `state["interaction:<id>:count"]`, beat-fired via
+  `flags["beat:<id>"]`, and item-in-inventory vs. authored location). GREEN —
+  new pure module, same `FieldRow` output type as `renderFields.ts`.
+- `src/tui/dev/layout.ts` + test: RED — tests for `splitContentPane` (divides
+  the content pane between a play panel and an inspector panel, less one row
+  for the divider, never starving play below its own chrome) and
+  `splitPlayViewport` (play's own viewport once split). GREEN — both
+  functions, following the existing `playViewport`/"undefined when terminal
+  size unknown" convention.
+- `src/tui/dev/hotkeys.ts` + test: RED — tests asserting `e` is omitted on
+  every category (not just logs) once `hasLiveSession` is true. GREEN — added
+  `!hasLiveSession` to the edit-key condition (the field already existed on
+  `HotKeyContext`, unused until now).
+- `src/tui/App.tsx` + test: RED — tests asserting a new `onStateChange` prop
+  is not called when omitted, is called with the new state after a successful
+  turn and after `/load`, and is *not* called after a failed turn (state is
+  rolled back). GREEN — `updateState()` wrapper around the two `setState`
+  call sites, so `DevApp` can mirror the live state without owning it.
+- `src/tui/DevApp.tsx` + test: the integration task. RED — new tests for the
+  Game State category (placeholder when idle, live location/turn, updates
+  after a turn), the runtime inspector (room inspector instead of authored
+  fields, player-is-here check, gameplay panel staying visible above the
+  inspector, collapsing on `p`/restoring on `Escape`, edit disabled/restored),
+  and a log-read-error banner inside the split inspector. GREEN — `DevApp`
+  now keeps a `liveGameState` mirror via `onStateChange`, routes `fieldRows`
+  through the new inspectors for `gamestate` and (while a session is live)
+  every entity category, and renders `<App>` inside a stable wrapper `Box` so
+  it never remounts (and loses its session) as the inspector panel is shown
+  or hidden around it.
+- Test-fallout fix: inserting `"gamestate"` between `"config"` and `"beats"`
+  shifted every later category's Tab index by one. Fixed ~15 tab-count
+  assumptions across `DevApp.test.tsx` (fixed-count loops, single `\t`
+  presses expecting to land on `Beats`, and the `toRooms`/`toCharacters`
+  helpers). The `logs`-reaching helpers that already computed
+  `CATEGORIES.length - 1` needed no change — order-independent by
+  construction.
+- Debugging note: two new Game State tests initially passed for the wrong
+  reason — `"cavern"`/`"turn 0"` substring checks were satisfied by the
+  gameplay scrollback's seeded narration ("A dark cavern.") and the play
+  status bar ("· turn 0"), not the inspector. Rewrote them to find a specific
+  line ending in `"turn N"` that excludes the status bar's `"Cave of Echoes"`
+  text, and to assert on `"Inventory"`/`"Flags"` labels the inspector alone
+  renders.
+- Tests: 585 passing, 0 failing (up from 540 — 45 new tests added, ~15
+  existing tests adjusted for the category reorder).
+- Coverage: `inspectFields.ts` 100%/95.31%/100%/100%, `layout.ts`
+  100%/100%/100%/100%, `hotkeys.ts` 100%/100%/100%/100%, `entityCatalog.ts`
+  100%/88.23%/100%/100%, `DevApp.tsx` 99.8%/93.53%/100%/99.8% (lines/
+  branches/functions/statements); overall 93.02%/89.93%/96.5%/93.02% — all
+  above the 90/85/90/90 thresholds. `App.tsx` branch coverage (82.96%) is a
+  pre-existing gap predating this task (was 82.3% before, in unrelated
+  default-command/error-handling branches) — confirmed via `git stash` and
+  left alone as out of scope; the new `onStateChange` code itself is fully
+  exercised.
+- Build: ✅ Successful (`bun run build`, zero errors).
+- Linting: ✅ Clean (`eslint .`, zero errors/warnings).
+- Typecheck: ✅ Clean (`tsc --noEmit`).
+- Manual TTY verification (Scenario 12 in `VERIFICATION_PLAN.md`): not run in
+  this session — no interactive terminal available. Documented as a
+  limitation, same as Scenarios 5, 8, 9, and 10 in this plan.
+- Completed: 2026-08-08

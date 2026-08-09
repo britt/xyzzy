@@ -74,7 +74,9 @@ export function hotKeysFor(context: HotKeyContext): HotKey[] {
   }
   // Editing needs a selection; the config category always has one implicitly.
   // Logs are read-only, so `e` is never offered there however many exist.
-  if (!isLogsCategory && (isConfigCategory || entryCount > 0)) {
+  // A live session turns the whole sidebar into a read-only inspector, so
+  // editing is unreachable there too, regardless of category.
+  if (!isLogsCategory && !hasLiveSession && (isConfigCategory || entryCount > 0)) {
     keys.push({ key: "e", label: "Edit" });
   }
   if (canPlay) {

@@ -38,11 +38,14 @@ import {
   renderFieldsFor,
   type FieldRow,
 } from "./dev/renderFields.js";
+import { inspectFieldsFor, inspectGameStateFields } from "./dev/inspectFields.js";
 import {
   contentPaneHeight,
   contentPaneWidth,
   devLayout,
   playViewport,
+  splitContentPane,
+  splitPlayViewport,
 } from "./dev/layout.js";
 import { fitHotKeys, hotKeysFor } from "./dev/hotkeys.js";
 import {
@@ -176,6 +179,7 @@ function newGameStateFor(adventure: Adventure): GameState {
 
 const INITIAL_SELECTION: SelectionByCategory = {
   config: 0,
+  gamestate: 0,
   beats: 0,
   characters: 0,
   rooms: 0,
@@ -240,6 +244,10 @@ export function DevApp({
   );
   const [focus, setFocus] = useState<Focus>("sidebar");
   const [playState, setPlayState] = useState<GameState | null>(null);
+  // `<App>` owns the real running state internally; it mirrors every change
+  // here via `onStateChange` so the inspector reflects turns as they happen
+  // rather than the stale seed `playState` was given.
+  const [liveGameState, setLiveGameState] = useState<GameState | null>(null);
   const [submenuOpen, setSubmenuOpen] = useState(false);
   const [submenuIndex, setSubmenuIndex] = useState(0);
   const [scroll, setScroll] = useState(0);
@@ -283,9 +291,14 @@ export function DevApp({
       setLogEntries(listSessionLogs(adventure.meta.id));
     }
     setPlayState(state);
+    setLiveGameState(state);
     setSubmenuOpen(false);
     setFocus("play");
   }
+
+  // Editing is unreachable from the sidebar for the whole duration of a live
+  // session — every category, not just the one you happen to be viewing.
+  const hasLiveSession = playState !== null;
 
   const entries = entriesForCategory(adventure, category);
   // Logs are listed separately from `entriesForCategory` (a session file is not
@@ -404,19 +417,38 @@ export function DevApp({
       ? renderConfigFields(adventure)
       : category === "logs"
         ? renderSessionLogFields(logContent.records)
-        : (() => {
-            const entry = entries[index];
-            if (!entry) return [];
-            const entity = findEntity(adventure, entry);
-            return entity ? renderFieldsFor(category, entity) : [];
-          })();
+        : category === "gamestate"
+          ? inspectGameStateFields(liveGameState)
+          : hasLiveSession && liveGameState
+            ? (() => {
+                const entry = entries[index];
+                return entry ? inspectFieldsFor(category, adventure, liveGameState, entry) : [];
+              })()
+            : (() => {
+                const entry = entries[index];
+                if (!entry) return [];
+                const entity = findEntity(adventure, entry);
+                return entity ? renderFieldsFor(category, entity) : [];
+              })();
+
+  // While a session is live and play doesn't have focus, the content pane
+  // splits: gameplay keeps running above, and the sidebar's selection is
+  // inspected below instead of taking the whole pane. Focusing play collapses
+  // this back to full-pane gameplay.
+  const showInspector = hasLiveSession && focus !== "play";
+  const splitLayout = showInspector ? splitContentPane(layout) : undefined;
+  const embeddedPlayViewport = showInspector
+    ? splitLayout && splitPlayViewport(layout, splitLayout)
+    : playViewport(layout);
 
   // Flatten to exact terminal rows so the pane can never hand Ink more lines
   // than it has room for — Ink garbles an overflowing box rather than clipping.
   const paneWidth = contentPaneWidth(layout);
   const paneHeight = contentPaneHeight(layout);
   const contentLines = layoutFieldRows(fieldRows, paneWidth ?? 80);
-  const visibleHeight = paneHeight ?? contentLines.length;
+  const visibleHeight = showInspector
+    ? (splitLayout?.inspectorRows ?? contentLines.length)
+    : (paneHeight ?? contentLines.length);
   const maxScroll = Math.max(0, contentLines.length - visibleHeight);
   const scrollOffset = clampScroll(scroll, contentLines.length, visibleHeight);
   const canScrollContent = maxScroll > 0;
@@ -524,8 +556,10 @@ export function DevApp({
         return;
       }
     }
-    // Logs are read-only, so `e` is inert there (and absent from the footer).
-    if (input === "e" && category !== "logs") {
+    // Logs are read-only, and a live session turns the whole sidebar into a
+    // read-only inspector, so `e` is inert in both cases (and absent from the
+    // footer — see hotKeysFor).
+    if (input === "e" && category !== "logs" && !hasLiveSession) {
       editSelected();
       return;
     }
@@ -608,26 +642,72 @@ export function DevApp({
               ))}
             </Box>
           ) : playState && provider && makeModel && listModels ? (
-            <App
-              adventure={adventure}
-              initialState={playState}
-              provider={provider}
-              makeModel={makeModel}
-              makeDetector={makeDetector}
-              listModels={listModels}
-              providers={providers}
-              saveSlot={saveSlot}
-              sessionLog={sessionLogHandle}
-              inputActive={focus === "play"}
-              // Embedded, so the transcript must stay inside the content pane
-              // rather than being written above the whole screen via <Static>.
-              scrollbackMode="bounded"
-              scrollbackViewport={playViewport(layout)}
-              onQuit={() => {
-                setPlayState(null);
-                setFocus("sidebar");
-              }}
-            />
+            <Box flexDirection="column" flexGrow={1} overflow="hidden">
+              {/* This inner box always wraps <App>, whether or not the
+                  inspector is showing below it — only its own size changes —
+                  so <App> never remounts (and loses its session) as `focus`
+                  toggles the split on and off. */}
+              <Box
+                flexDirection="column"
+                overflow="hidden"
+                flexGrow={showInspector ? 0 : 1}
+                height={showInspector ? splitLayout?.playRows : undefined}
+              >
+                <App
+                  adventure={adventure}
+                  initialState={playState}
+                  provider={provider}
+                  makeModel={makeModel}
+                  makeDetector={makeDetector}
+                  listModels={listModels}
+                  providers={providers}
+                  saveSlot={saveSlot}
+                  sessionLog={sessionLogHandle}
+                  inputActive={focus === "play"}
+                  // Embedded, so the transcript must stay inside its own
+                  // panel rather than being written above the whole screen
+                  // via <Static>.
+                  scrollbackMode="bounded"
+                  scrollbackViewport={embeddedPlayViewport}
+                  onStateChange={setLiveGameState}
+                  onQuit={() => {
+                    setPlayState(null);
+                    setLiveGameState(null);
+                    setFocus("sidebar");
+                  }}
+                />
+              </Box>
+              {showInspector && (
+                <>
+                  <Box
+                    flexShrink={0}
+                    borderStyle="single"
+                    borderTop
+                    borderBottom={false}
+                    borderLeft={false}
+                    borderRight={false}
+                    borderTopColor="cyan"
+                    borderTopDimColor
+                  />
+                  <Box
+                    flexDirection="column"
+                    height={splitLayout?.inspectorRows}
+                    overflow="hidden"
+                  >
+                    {logContent.error ? (
+                      <>
+                        <Text color="red">⚠ Could not read log:</Text>
+                        <Text color="red">{logContent.error}</Text>
+                      </>
+                    ) : (
+                      visibleLines.map((line, i) => (
+                        <ContentLine key={scrollOffset + i} line={line} />
+                      ))
+                    )}
+                  </Box>
+                </>
+              )}
+            </Box>
           ) : logContent.error ? (
             <>
               <Text color="red">⚠ Could not read log:</Text>

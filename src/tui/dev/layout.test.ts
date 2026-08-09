@@ -8,6 +8,8 @@ import {
   MAX_SIDEBAR_WIDTH,
   MIN_SIDEBAR_WIDTH,
   devLayout,
+  splitContentPane,
+  splitPlayViewport,
 } from "./layout.js";
 
 describe("devLayout", () => {
@@ -64,5 +66,52 @@ describe("playViewport", () => {
     const viewport = playViewport(devLayout(10, 3));
     expect(viewport!.width).toBeGreaterThan(0);
     expect(viewport!.rows).toBeGreaterThan(0);
+  });
+});
+
+describe("splitContentPane", () => {
+  it("divides the content pane roughly in half, less one row for the divider", () => {
+    const layout = devLayout(120, 40); // height 39, content pane height 39 - FOOTER_ROWS
+    const split = splitContentPane(layout);
+    const contentHeight = 39 - FOOTER_ROWS;
+    expect(split!.playRows + split!.inspectorRows).toBe(contentHeight - 1);
+    expect(split!.playRows).toBeGreaterThanOrEqual(split!.inspectorRows);
+  });
+
+  it("is undefined when the terminal size is unknown", () => {
+    expect(splitContentPane(devLayout(undefined, undefined))).toBeUndefined();
+  });
+
+  it("never gives play fewer rows than its own chrome needs", () => {
+    const split = splitContentPane(devLayout(80, 8));
+    expect(split!.playRows).toBeGreaterThanOrEqual(PLAY_CHROME_ROWS);
+  });
+
+  it("never returns a non-positive row count for either panel", () => {
+    const split = splitContentPane(devLayout(80, 6));
+    expect(split!.playRows).toBeGreaterThan(0);
+    expect(split!.inspectorRows).toBeGreaterThan(0);
+  });
+});
+
+describe("splitPlayViewport", () => {
+  it("gives play its share of rows, less its own chrome, at the content pane's width", () => {
+    const layout = devLayout(120, 40);
+    const split = splitContentPane(layout)!;
+    expect(splitPlayViewport(layout, split)).toEqual({
+      width: 120 - 30 - SIDEBAR_GAP,
+      rows: split.playRows - PLAY_CHROME_ROWS,
+    });
+  });
+
+  it("is undefined when the terminal size is unknown", () => {
+    const layout = devLayout(undefined, undefined);
+    expect(splitPlayViewport(layout, { playRows: 5, inspectorRows: 5 })).toBeUndefined();
+  });
+
+  it("never returns a non-positive row count", () => {
+    const layout = devLayout(80, 8);
+    const split = splitContentPane(layout)!;
+    expect(splitPlayViewport(layout, split)!.rows).toBeGreaterThan(0);
   });
 });

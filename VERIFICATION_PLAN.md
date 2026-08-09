@@ -289,6 +289,41 @@ only scenario covering that opt-in, and it needs no interaction beyond quitting.
 
 **If Blocked**: If no real TTY is available, note the limitation — same as Scenarios 5, 8, 9, and 10.
 
+### Scenario 12: Game-state inspector while a `xyzzy dev` session is live
+
+**Context**: While an embedded play session is live, the sidebar stops being
+an authoring surface and becomes a read-only runtime inspector, so editing
+authored content mid-session can no longer silently drift from what the
+running game actually has. This needs a real TTY, same as Scenarios 5, 8, 9,
+and 10.
+
+**Steps**:
+1. Copy `examples/cave-of-echoes` to `/tmp/xyzzy-verify-inspector`.
+2. In a real terminal: `bun run start -- dev /tmp/xyzzy-verify-inspector`.
+3. Press `Tab` once; confirm a `Game State` category appears directly below `Adventure Config`, showing a placeholder (no session running yet).
+4. Press `p`, then Enter to start a New Game; confirm the play pane appears full-height, as before.
+5. Press `Escape`; confirm the content pane now splits into two stacked panels — the live gameplay transcript/status bar on top, and an inspector pane below showing the currently-selected sidebar entry.
+6. With `Game State` still selected, confirm the inspector shows the live location, turn, inventory, flags, and per-character summary.
+7. `Tab` to `Rooms`; confirm the inspector shows whether the player is in the selected room, not the room's authored description — and that pressing `e` does nothing and the footer does not list `Edit`.
+8. Type a command that moves the player to a different room (or `look` if no reachable model — either way return to the sidebar with `Escape` if focus moved to play) and confirm, once a turn completes, the Room/Game State inspector reflects the update on the next render.
+9. Press `p` to refocus play; confirm the inspector disappears and gameplay again takes the full pane.
+10. Press `Escape`; confirm the split reappears with the same selection as before.
+11. Type `/quit` in the play pane; confirm the content pane returns to normal single-pane browsing (authored fields, `Edit` offered again).
+12. Press `q` to exit the tool.
+13. Delete `/tmp/xyzzy-verify-inspector`.
+
+**Success Criteria**:
+- [ ] Step 3: `Game State` appears directly below `Adventure Config`
+- [ ] Step 5: gameplay above, inspector below, both visible at once
+- [ ] Step 6: `Game State` inspector shows live location/turn/inventory/flags/characters
+- [ ] Step 7: `e` is inert and absent from the footer while a session is live, for every category
+- [ ] Step 9: focusing play collapses the inspector back to full-pane gameplay
+- [ ] Step 10: `Escape` restores the split
+- [ ] Step 11: quitting the session restores normal authoring (editable) browsing
+- [ ] The screen fits the terminal exactly throughout, with no overflow or garbled panes
+
+**If Blocked**: If no real TTY is available, stop and ask the developer to run this scenario, or note the limitation explicitly — same as Scenarios 5, 8, 9, and 10.
+
 ## Verification Rules
 
 - Never use mocks or fakes
