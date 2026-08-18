@@ -48,6 +48,12 @@ describe("buildSystemPrompt", () => {
     // Positive guidance that movement is engine-handled should remain.
     expect(prompt).toContain("automatically");
   });
+
+  it("instructs the model not to list the characters present itself", () => {
+    const prompt = buildSystemPrompt(adventure).toLowerCase();
+    expect(prompt).toContain("do not list the characters");
+    expect(prompt).toContain("automatically appends");
+  });
 });
 
 describe("canonicalizeAction", () => {
@@ -516,6 +522,41 @@ describe("runTurn", () => {
       "look",
     );
     expect(narration).toContain("Characters\n- The Guard\n- Barkeep");
+  });
+
+  it("strips a model's echoed character digest block, leaving one authoritative list", async () => {
+    const tavern: Adventure = {
+      meta: { id: "t", title: "T", version: "1" },
+      premise: "p",
+      start: { room: "start" },
+      entities: {
+        rooms: [{ id: "start", name: "Start", description: "d" }],
+        characters: [
+          { id: "g", name: "The Guard", persona: "A stern guard.", history: [], state: { mood: "tense" }, location: "start" },
+        ],
+      },
+    };
+    // Model copies the digest's "Characters here:" block (name/persona/state)
+    // into its narration, the same way it sometimes echoes the exits digest line.
+    const model = new FakeNarratorModel([
+      {
+        narration:
+          "You look around.\n\nCharacters here:\n  - The Guard [g] — A stern guard.\n    state: mood=\"tense\"",
+        actions: [],
+      },
+    ]);
+    const { narration } = await runTurn(
+      { adventure: tavern, model, clock: () => "t" },
+      newGameState(tavern, "c"),
+      "look",
+    );
+
+    expect(narration).toContain("You look around.");
+    expect(narration).not.toContain("[g]"); // internal id gone
+    expect(narration).not.toContain("stern guard"); // echoed persona gone
+    expect(narration).not.toContain('mood="tense"'); // echoed state gone
+    expect(narration.match(/Characters/gi)).toHaveLength(1); // exactly one characters block
+    expect(narration).toContain("Characters\n- The Guard"); // engine's authoritative footer
   });
 
   it("omits the characters section when no other characters are in the room", async () => {
