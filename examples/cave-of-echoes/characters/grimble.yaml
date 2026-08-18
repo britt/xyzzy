@@ -14,3 +14,47 @@ state:
   trust: 10
   mood: wary
   bribed: false
+
+# `beats` are story beats scoped to this character — each fires at most
+# once, same as a top-level beat, but only makes sense in Grimble's
+# presence. `setGameState` below changes shared game state (`state.*` on
+# the save, visible to any room or character); `setCharacterState` changes
+# only Grimble's own private state bag above. Using both in one beat's
+# effects shows the difference: "the world now knows they've met" versus
+# "Grimble himself feels differently about it."
+beats:
+  - id: grimble-first-meeting
+    description: The player and Grimble meet for the first time.
+    trigger: The player first speaks to or approaches Grimble at the lake.
+    effects:
+      - type: setGameState
+        key: metGrimble
+        value: true
+      - type: setCharacterState
+        charId: grimble
+        key: mood
+        value: curious
+      - type: appendCharacterHistory
+        charId: grimble
+        summary: Met a stranger at the lake's edge for the first time in years.
+
+# `interactions` are the repeatable counterpart to `beats` — Grimble has
+# more than one riddle, so this can fire again (up to `limit` times). Its
+# effects mix the same two verbs: `setCharacterState` nudges Grimble's own
+# trust, while `setGameState` records a fact about the world at large
+# (that a riddle has been offered at all), independent of who asked.
+interactions:
+  - id: offer-a-riddle
+    description: Grimble offers the player a riddle in exchange for a little trust.
+    trigger: >
+      The player asks Grimble a question, tries to bargain with him, or
+      otherwise draws him into conversation.
+    limit: 3
+    effects:
+      - type: setCharacterState
+        charId: grimble
+        key: trust
+        value: 12
+      - type: setGameState
+        key: riddleOffered
+        value: true
