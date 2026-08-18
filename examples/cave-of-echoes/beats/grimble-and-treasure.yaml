@@ -20,7 +20,36 @@
 - id: claim-the-gem
   description: The player takes the perfect gemstone from the alcove.
   trigger: The player picks up the gemstone.
+  # A beat's effects can reach every kind of state a save tracks, not just
+  # flags/game state — this one deliberately exercises the full range, all
+  # applied atomically together the moment the beat advances.
   effects:
+    # setGameState — shared, world-wide fact anyone can check.
     - type: setGameState
       key: treasureClaimed
       value: true
+    # setFlag — same idea, kept in the separate `flags` bag.
+    - type: setFlag
+      key: gemTaken
+      value: true
+    # addItem — guarantees the gem lands in the player's inventory even if
+    # the narrator forgot to call addItem itself.
+    - type: addItem
+      item: gemstone
+    # setCharacterState — Grimble's own private state, distinct from the
+    # shared game state above: his purpose here is gone.
+    - type: setCharacterState
+      charId: grimble
+      key: mood
+      value: resigned
+    # appendCharacterHistory — a permanent note in Grimble's memory.
+    - type: appendCharacterHistory
+      charId: grimble
+      summary: >
+        Watched the last shiny thing in the cave leave with a stranger, and
+        said nothing.
+    # moveCharacter — with nothing left to guard, Grimble finally wanders
+    # from the post he's kept for longer than he can count.
+    - type: moveCharacter
+      charId: grimble
+      room: cavern
