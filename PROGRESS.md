@@ -772,3 +772,41 @@ test and the shipped Scenario 10 reflect this.
   this session — no interactive terminal available. Documented as a
   limitation, same as Scenarios 5, 8, 9, and 10 in this plan.
 - Completed: 2026-08-08
+
+## Task: Fix duplicate character listing in narration - COMPLETE
+- Started: 2026-08-18
+- Bug report: while playing, characters present in a room were displayed
+  multiple times at the bottom of the narrated scene — once plainly by name,
+  and again with a state description, per character.
+- Root cause: `buildDigest()` (`src/engine/digest.ts`) feeds the model a
+  `"Characters here:"` block per turn containing each character's name,
+  persona, and live state — but unlike the `"Exits: …"` digest line (which
+  the system prompt explicitly tells the model never to echo, and
+  `stripProseExits` scrubs as a backstop), there was no equivalent
+  instruction or stripping for characters. Local models regularly copied that
+  digest block verbatim into their narration prose. The engine then
+  unconditionally appended its own authoritative `charactersFooter()` (plain
+  `"Characters\n- Name"` list) after the prose, so the player saw each
+  character twice: once via the model's copied digest block (name + persona +
+  state), once via the engine's plain footer.
+- RED: `src/engine/turnLoop.test.ts` — added a `buildSystemPrompt` test
+  requiring an explicit "do not list the characters" instruction (tightened
+  after discovering the first draft assertion passed vacuously against
+  existing EXITS text), and a `runTurn` integration test asserting that when
+  the model echoes the digest's `"Characters here:"` block (with `[id]`,
+  persona, and `state: …`), the final narration contains exactly one
+  `"Characters"` occurrence, none of the echoed detail, and the engine's
+  plain footer.
+- GREEN: added a `CHARACTERS:` section to `buildSystemPrompt` mirroring the
+  existing `EXITS:` section (prevention), and a new `stripProseCharacters()`
+  function in `turnLoop.ts` mirroring `stripProseExits()` — strips both the
+  engine's own footer format (if echoed from transcript) and the digest's
+  multi-line `"Characters here:"` block (backstop). Wired into `runTurn` as
+  `stripProseCharacters(stripProseExits(result.narration))` before the
+  authoritative footers are appended.
+- Tests: 587 passing, 0 failing (full suite; 2 new tests added).
+- Coverage: `turnLoop.ts` 97.08%/85.95%/100%/97.08% (lines/branches/
+  functions/statements) — above the 90/85/90/90 thresholds.
+- Build: ✅ Successful (`bun run build`, zero errors).
+- Linting: ✅ Clean (`eslint .`, zero errors/warnings).
+- Completed: 2026-08-18

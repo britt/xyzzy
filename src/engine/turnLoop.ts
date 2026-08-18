@@ -279,6 +279,25 @@ export function stripProseExits(text: string): string {
     .trim();
 }
 
+/**
+ * Remove any "Characters"/"Characters here:" run the model emitted (often
+ * copied verbatim from the digest's per-character name/persona/state/history
+ * block, or echoed back from the engine's own footer in the transcript). The
+ * engine appends its own authoritative characters line, so the model's copy
+ * is redundant and duplicates each character (once with digest detail, once
+ * plain).
+ */
+export function stripProseCharacters(text: string): string {
+  return text
+    // The engine's own footer format ("Characters\n- Name"), in case the
+    // model echoes it back from the transcript.
+    .replace(/\n*[ \t]*Characters\b[ \t]*\n(?:[ \t]*[-*•][^\n]*\n?)+/gi, "\n")
+    // The digest's "Characters here:" block — a header line followed by
+    // indented name/persona/state/history/goals lines per character.
+    .replace(/\n*[ \t]*Characters here:[ \t]*\n(?:[ \t]+[^\n]*\n?)*/gi, "\n")
+    .trim();
+}
+
 /** System prompt: premise + tone + the rules that steer tool use. */
 export function buildSystemPrompt(adventure: Adventure): string {
   return [
@@ -299,6 +318,11 @@ export function buildSystemPrompt(adventure: Adventure): string {
     "automatically appends the complete, authoritative list of exits and their",
     "directions, so just describe the scene and never enumerate exits in prose",
     "(listing only some of them would contradict that authoritative list).",
+    "",
+    "CHARACTERS: Do NOT list the characters present in the room yourself — never",
+    "enumerate their names, personas, or state as a roster. After your narration",
+    "the game automatically appends the authoritative list of characters present,",
+    "so just narrate and voice them naturally in prose.",
     "",
     "PREMISE:",
     adventure.premise.trim(),
@@ -432,7 +456,7 @@ export async function runTurn(
   // The engine owns the exits line. Strip any "Exits: …" the model copied from
   // the digest (often truncated and with internal ids), then append the
   // authoritative, complete list so the player always sees every way out.
-  const prose = stripProseExits(result.narration);
+  const prose = stripProseCharacters(stripProseExits(result.narration));
   const footers = [exitsFooter(adventure, reduced), charactersFooter(adventure, reduced)]
     .filter((f): f is string => f !== null)
     .join("\n\n");
